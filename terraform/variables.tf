@@ -15,9 +15,3 @@ variable "zone" {
   type        = string
   default     = "europe-west1-b"
 }
-
-variable "cluster_name" {
-  description = "Spark Cluster Name"
-  type        = string
-  default     = "spark-cluster"
-}
