@@ -35,3 +35,59 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!example.tfvars
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+
+# Ansible
+*.retry
+.vault_pass
+ansible.log
+*.vault
+
+# GCP Credentials - IMPORTANT!
+*.json
+*service-account*.json
+gcp-credentials.json
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+private/
+
+# Backup files
+*.bak
+*.backup
