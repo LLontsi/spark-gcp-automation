@@ -7,25 +7,28 @@ Apache Spark cluster on GCP with the following components:
 ## Components
 
 ### Master Node
+
 - **Role**: Spark Master
 - **Instance Type**: n1-standard-2
 - **OS**: Ubuntu 22.04 LTS
 - **Services**: Spark Master, Web UI (8080)
 
 ### Worker Nodes (3x)
+
 - **Role**: Spark Workers
 - **Instance Type**: n1-standard-2
 - **OS**: Ubuntu 22.04 LTS
 - **Services**: Spark Worker
 
 ### Edge Node
+
 - **Role**: Job Submission
 - **Instance Type**: n1-standard-1
 - **OS**: Ubuntu 22.04 LTS
 - **Services**: Spark Client
 
 ## Network Architecture
-```
+```text
 Internet
     |
     v
