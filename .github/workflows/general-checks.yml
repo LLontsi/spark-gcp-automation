@@ -1,0 +1,27 @@
+name: General Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [lontsi, lado]
+
+jobs:
+  file-structure:
+    name: Check File Structure
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Verify project structure
+      run: |
+        echo "Checking project structure..."
+        test -d terraform || { echo "terraform/ directory missing"; exit 1; }
+        test -d ansible || { echo "ansible/ directory missing"; exit 1; }
+        test -d scripts || { echo "scripts/ directory missing"; exit 1; }
+        test -d docs || { echo "docs/ directory missing"; exit 1; }
+        test -f README.md || { echo "README.md missing"; exit 1; }
+        test -f .gitignore || { echo ".gitignore missing"; exit 1; }
+        echo "✅ Project structure is valid"
