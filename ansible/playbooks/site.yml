@@ -1,0 +1,16 @@
+---
+- name: Configure Spark Cluster
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Print hostname
+      ansible.builtin.debug:
+        msg: "Configuring {{ ansible_hostname }}"
+
+    - name: Ensure system is updated
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
