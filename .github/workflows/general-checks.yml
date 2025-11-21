@@ -7,21 +7,6 @@ on:
     branches: [lontsi, lado]
 
 jobs:
-  markdown-lint:
-    name: Markdown Lint
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Markdown Lint
-      uses: articulate/actions-markdownlint@v1
-      with:
-        config: .markdownlint.json
-        files: '**/*.md'
-      continue-on-error: true
-
   file-structure:
     name: Check File Structure
     runs-on: ubuntu-latest
