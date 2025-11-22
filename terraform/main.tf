@@ -49,7 +49,6 @@ module "compute" {
   source = "./modules/compute"
 
   project_id          = var.project_id
-  region              = var.region
   zone                = var.zone
   network_self_link   = module.vpc.vpc_self_link
   subnet_self_link    = module.vpc.subnet_self_link
