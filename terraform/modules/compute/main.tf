@@ -1,3 +1,13 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+  }
+}
 # Master Node
 resource "google_compute_instance" "spark_master" {
   name         = "${var.cluster_name}-master"

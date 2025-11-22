@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+  }
+}
+
 # Allow SSH from specified IPs
 resource "google_compute_firewall" "allow_ssh" {
   name    = "${var.network_name}-allow-ssh"
