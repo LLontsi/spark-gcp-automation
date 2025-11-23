@@ -7,7 +7,7 @@ This module creates a VPC network for the Spark cluster on GCP.
 - VPC Network (custom mode)
 - Subnet with Private Google Access enabled
 - Cloud Router
-- Cloud NAT for outbound internet access
+- Cloud NAT for outbound internet access.
 
 ## Usage
 ```hcl
