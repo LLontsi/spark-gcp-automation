@@ -1,3 +1,9 @@
-#SPDX-License-Identifier: MIT-0
 ---
-# handlers file for spark-master
+# Handlers for Spark Master
+
+- name: Restart Spark Master
+  ansible.builtin.systemd:
+    name: spark-master
+    state: restarted
+    daemon_reload: true
+  become: true
