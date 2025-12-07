@@ -46,8 +46,10 @@ terraform plan
 terraform apply
 
 # 4. Configure Spark cluster
+4. Configure Spark cluster
 cd ../ansible
-ansible-playbook -i inventory/gcp.yml playbooks/site.yml
+./update_inventory.sh
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml
 ```
 
 ## 📂 Project Structure
@@ -65,7 +67,13 @@ ansible-playbook -i inventory/gcp.yml playbooks/site.yml
 
 Run the WordCount application to validate deployment:
 ```bash
-./scripts/wordcount/run_wordcount.sh
+# Get the Edge node IP from inventory
+ssh ansible@<EDGE_EXTERNAL_IP>
+
+# On the Edge node:
+cd ~/spark-jobs
+./run_wordcount.sh
+
 ```
 
 ## 👥 Team
