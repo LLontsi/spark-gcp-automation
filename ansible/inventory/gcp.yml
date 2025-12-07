@@ -1,0 +1,32 @@
+# Inventory file for GCP
+# Explanation
+# - plugin: google.cloud.gcp_compute: Use the GCP Compute plugin
+# - projects: List of projects to use
+# - filters: Filter the instances by label
+# - keyed_groups: Group the instances by label
+# - hostnames: Use the name of the instance as the hostname
+# - compose: Compose the inventory file
+---
+plugin: google.cloud.gcp_compute
+
+projects:
+  - spark-gcp-automation
+
+filters:
+  - labels.cluster: spark
+
+keyed_groups:
+  - key: labels.role
+    prefix: ""
+    separator: ""
+
+hostnames:
+  - name
+
+compose:
+  ansible_host: networkInterfaces[0].accessConfigs[0].natIP
+  ansible_user: ansible
+  ansible_ssh_private_key_file: ~/.ssh/gcp_spark
+  ansible_python_interpreter: /usr/bin/python3
+
+
