@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Java Home
+export JAVA_HOME={{ java_home }}
+
+# Spark Home
+export SPARK_HOME={{ spark_home }}
+
+{% for key, value in spark_env_extras.items() %}
+export {{ key }}="{{ value }}"
+{% endfor %}
+
+# Spark Master Configuration
+export SPARK_MASTER_WEBUI_PORT={{ spark_master_webui_port }}
+
+# Spark Worker Configuration  
+export SPARK_WORKER_WEBUI_PORT={{ spark_worker_webui_port }}
+
+# Python Configuration
+export PYSPARK_PYTHON=/usr/bin/python3

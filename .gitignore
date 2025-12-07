@@ -91,3 +91,6 @@ private/
 # Backup files
 *.bak
 *.backup
+
+# PR description
+PR_DESCRIPTION.md

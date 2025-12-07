@@ -1,0 +1,9 @@
+# Default Spark configuration
+
+{% for key, value in spark_defaults.items() %}
+{{ key }}    {{ value }}
+{% endfor %}
+
+# Additional configurations
+spark.sql.warehouse.dir    /tmp/spark-warehouse
+spark.driver.host    {{ ansible_default_ipv4.address }}
