@@ -81,7 +81,9 @@
     mode: '0644'
     owner: root
     group: root
+  become: true
 
+- name: Install Python packages for Spark
   ansible.builtin.pip:
     name:
       - pyspark
