@@ -68,7 +68,20 @@
     - { path: '/var/log/spark', mode: '0755' }
   become: true
 
-- name: Install Python packages for Spark
+- name: Create sample data file for testing
+  ansible.builtin.copy:
+    dest: /tmp/sample.txt
+    content: |
+      Apache Spark is a unified analytics engine for large-scale data processing.
+      Spark provides high-level APIs in Java, Scala, Python and R.
+      It also supports a rich set of higher-level tools including Spark SQL.
+      MLlib for machine learning, GraphX for graph processing.
+      Structured Streaming for incremental computation and stream processing.
+      Apache Spark achieves high performance for both batch and streaming data.
+    mode: '0644'
+    owner: root
+    group: root
+
   ansible.builtin.pip:
     name:
       - pyspark

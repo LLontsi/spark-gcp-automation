@@ -86,18 +86,7 @@
     owner: "{{ ansible_user }}"
     mode: '0755'
 
-- name: Create sample input file
-  ansible.builtin.copy:
-    content: |
-      Apache Spark is a unified analytics engine for large-scale data processing.
-      Spark provides high-level APIs in Java, Scala, Python and R.
-      It also supports a rich set of higher-level tools including Spark SQL.
-      MLlib for machine learning, GraphX for graph processing.
-      Structured Streaming for incremental computation and stream processing.
-      Apache Spark achieves high performance for both batch and streaming data.
-    dest: /home/{{ ansible_user }}/spark-jobs/sample.txt
-    owner: "{{ ansible_user }}"
-    mode: '0644'
+
 
 - name: Create WordCount test runner script
   ansible.builtin.copy:
@@ -106,7 +95,7 @@
       set -e
 
       MASTER_URL="spark://{{ spark_master_ip }}:{{ spark_master_port }}"
-      INPUT="${1:-/home/{{ ansible_user }}/spark-jobs/sample.txt}"
+      INPUT="${1:-/tmp/sample.txt}"
       OUTPUT="${2:-/tmp/wordcount-output}"
 
       echo "Running WordCount test..."
