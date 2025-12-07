@@ -59,13 +59,13 @@
 
 - name: Create spark directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
-    mode: '0755'
+    mode: "{{ item.mode }}"
   loop:
-    - /tmp/spark-events
-    - /var/run/spark
-    - /var/log/spark
+    - { path: '/tmp/spark-events', mode: '1777' }
+    - { path: '/var/run/spark', mode: '0755' }
+    - { path: '/var/log/spark', mode: '0755' }
   become: true
 
 - name: Install Python packages for Spark
