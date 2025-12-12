@@ -1,0 +1,93 @@
+---
+# Install Spark on all cluster nodes
+
+- name: Create Spark installation directory
+  ansible.builtin.file:
+    path: "{{ spark_install_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Check if Spark is already downloaded
+  ansible.builtin.stat:
+    path: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+  register: spark_archive
+
+- name: Download Apache Spark
+  ansible.builtin.get_url:
+    url: "{{ spark_download_url }}"
+    dest: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+    mode: '0644'
+    timeout: 300
+  become: true
+  when: not spark_archive.stat.exists
+
+- name: Check if Spark is already extracted
+  ansible.builtin.stat:
+    path: "{{ spark_home }}"
+  register: spark_dir
+
+- name: Extract Spark archive
+  ansible.builtin.unarchive:
+    src: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+    dest: "{{ spark_install_dir }}"
+    remote_src: true
+    creates: "{{ spark_home }}"
+  become: true
+  when: not spark_dir.stat.exists
+
+- name: Create Spark symlink
+  ansible.builtin.file:
+    src: "{{ spark_home }}"
+    dest: /opt/spark/current
+    state: link
+  become: true
+
+- name: Set SPARK_HOME in /etc/environment
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'SPARK_HOME="{{ spark_home }}"'
+    create: true
+    mode: '0644'
+  become: true
+
+- name: Add Spark to PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile.d/spark.sh
+    line: "{{ item }}"
+    create: true
+    mode: '0644'
+  loop:
+    - 'export SPARK_HOME="{{ spark_home }}"'
+    - 'export PATH=$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH'
+  become: true
+
+- name: Create Spark configuration directory
+  ansible.builtin.file:
+    path: "{{ spark_home }}/conf"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Create spark-env.sh from template
+  ansible.builtin.template:
+    src: spark-env.sh.j2
+    dest: "{{ spark_home }}/conf/spark-env.sh"
+    mode: '0755'
+  become: true
+
+- name: Create spark-defaults.conf
+  ansible.builtin.template:
+    src: spark-defaults.conf.j2
+    dest: "{{ spark_home }}/conf/spark-defaults.conf"
+    mode: '0644'
+  become: true
+
+- name: Create log4j properties
+  ansible.builtin.copy:
+    src: "{{ spark_home }}/conf/log4j2.properties.template"
+    dest: "{{ spark_home }}/conf/log4j2.properties"
+    remote_src: true
+    mode: '0644'
+  become: true
+  ignore_errors: true

@@ -1,0 +1,54 @@
+---
+# Configure Spark Master node
+
+- name: Create Spark Master systemd service
+  ansible.builtin.template:
+    src: spark-master.service.j2
+    dest: /etc/systemd/system/spark-master.service
+    mode: '0644'
+  become: true
+  notify: Restart Spark Master
+
+- name: Create workers file
+  ansible.builtin.copy:
+    content: |
+      spark-worker-1
+      spark-worker-2
+      spark-worker-3
+    dest: "{{ spark_home }}/conf/workers"
+    mode: '0644'
+  become: true
+
+- name: Enable Spark Master service
+  ansible.builtin.systemd:
+    name: spark-master
+    enabled: true
+    daemon_reload: true
+  become: true
+
+- name: Start Spark Master service
+  ansible.builtin.systemd:
+    name: spark-master
+    state: started
+  become: true
+
+- name: Wait for Spark Master to start
+  ansible.builtin.wait_for:
+    host: "{{ spark_master_ip }}"
+    port: "{{ spark_master_port }}"
+    delay: 5
+    timeout: 60
+
+- name: Check Spark Master status
+  ansible.builtin.uri:
+    url: "http://{{ spark_master_ip }}:{{ spark_master_webui_port }}"
+    status_code: 200
+    timeout: 30
+  register: master_ui
+  retries: 5
+  delay: 10
+  until: master_ui.status == 200
+
+- name: Display Spark Master Web UI URL
+  ansible.builtin.debug:
+    msg: "Spark Master Web UI: http://{{ ansible_default_ipv4.address }}:{{ spark_master_webui_port }}"

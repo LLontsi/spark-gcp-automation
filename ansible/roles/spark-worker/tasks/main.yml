@@ -1,0 +1,54 @@
+---
+# Configure Spark Worker nodes
+
+- name: Create Spark Worker systemd service
+  ansible.builtin.template:
+    src: spark-worker.service.j2
+    dest: /etc/systemd/system/spark-worker.service
+    mode: '0644'
+  become: true
+  notify: Restart Spark Worker
+
+- name: Enable Spark Worker service
+  ansible.builtin.systemd:
+    name: spark-worker
+    enabled: true
+    daemon_reload: true
+  become: true
+
+- name: Start Spark Worker service
+  ansible.builtin.systemd:
+    name: spark-worker
+    state: started
+  become: true
+
+- name: Wait for Spark Worker to start
+  ansible.builtin.wait_for:
+    host: "{{ ansible_default_ipv4.address }}"
+    port: "{{ spark_worker_webui_port }}"
+    delay: 5
+    timeout: 60
+
+- name: Check Spark Worker status
+  ansible.builtin.uri:
+    url: "http://{{ ansible_default_ipv4.address }}:{{ spark_worker_webui_port }}"
+    status_code: 200
+    timeout: 30
+  register: worker_ui
+  retries: 5
+  delay: 10
+  until: worker_ui.status == 200
+
+- name: Display Spark Worker Web UI URL
+  ansible.builtin.debug:
+    msg: "Spark Worker Web UI: http://{{ ansible_default_ipv4.address }}:{{ spark_worker_webui_port }}"
+
+- name: Verify worker connection to master
+  ansible.builtin.shell: |
+    curl -s http://{{ spark_master_ip }}:{{ spark_master_webui_port }} | grep -q "{{ ansible_hostname }}"
+  register: worker_registered
+  retries: 5
+  delay: 10
+  until: worker_registered.rc == 0
+  changed_when: false
+  ignore_errors: true

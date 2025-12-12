@@ -1,16 +1,67 @@
 ---
-- name: Configure Spark Cluster
+# Main playbook to configure Spark cluster
+
+- name: Load global variables
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Include global vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+    - name: Include cluster vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/spark_cluster.yml"
+
+- name: Configure all nodes with common settings
   hosts: all
   become: true
   gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark_cluster.yml
+  roles:
+    - common
+    - java
+    - spark-common
 
+- name: Configure Spark Master
+  hosts: master
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark_cluster.yml
+  roles:
+    - spark-master
+
+- name: Configure Spark Workers
+  hosts: workers
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark_cluster.yml
+  roles:
+    - spark-worker
+
+- name: Configure Spark Edge node
+  hosts: edge
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark_cluster.yml
+  roles:
+    - spark-edge
+
+- name: Display cluster summary
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Print hostname
+    - name: Cluster deployment summary
       ansible.builtin.debug:
-        msg: "Configuring {{ ansible_hostname }}"
-
-    - name: Ensure system is updated
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
-      when: ansible_os_family == "Debian"
+        msg:
+          - "╔════════════════════════════════════════════════╗"
+          - "║   Spark Cluster Configuration Complete!       ║"
+          - "╚════════════════════════════════════════════════╝"
+          - ""
+          - "Spark deployment finished!"
+          - "Check the Master UI for cluster status"
+      when: groups['master'] is defined

@@ -1,0 +1,82 @@
+---
+# Common tasks for all nodes
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - net-tools
+      - dnsutils
+      - unzip
+      - tar
+      - python3
+      - python3-pip
+      - build-essential
+    state: present
+  become: true
+
+#- name: Set timezone
+ # community.general.timezone:
+#    name: "{{ timezone }}"
+#  become: true
+
+- name: Set locale
+  ansible.builtin.locale_gen:
+    name: "{{ locale }}"
+    state: present
+  become: true
+
+- name: Disable swap for better Spark performance
+  ansible.builtin.command: swapoff -a
+  become: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Comment out swap in /etc/fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+    replace: '# \1'
+  become: true
+
+- name: Set system limits for Spark
+  ansible.builtin.pam_limits:
+    domain: "*"
+    limit_type: "{{ item.limit_type }}"
+    limit_item: "{{ item.limit_item }}"
+    value: "{{ item.value }}"
+  loop:
+    - { limit_type: 'soft', limit_item: 'nofile', value: '65536' }
+    - { limit_type: 'hard', limit_item: 'nofile', value: '65536' }
+    - { limit_type: 'soft', limit_item: 'nproc', value: '32768' }
+    - { limit_type: 'hard', limit_item: 'nproc', value: '32768' }
+  become: true
+
+- name: Create spark directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /tmp/spark-events
+    - /var/run/spark
+    - /var/log/spark
+  become: true
+
+- name: Install Python packages for Spark
+  ansible.builtin.pip:
+    name:
+      - pyspark
+      - py4j
+    state: present
+  become: true

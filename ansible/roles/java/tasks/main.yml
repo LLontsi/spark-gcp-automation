@@ -1,0 +1,37 @@
+---
+# Install and configure Java
+
+- name: Install OpenJDK 11
+  ansible.builtin.apt:
+    name: openjdk-11-jdk
+    state: present
+    update_cache: true
+  become: true
+
+- name: Set JAVA_HOME in /etc/environment
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'JAVA_HOME="{{ java_home }}"'
+    create: true
+    mode: '0644'
+  become: true
+
+- name: Add JAVA_HOME to profile
+  ansible.builtin.lineinfile:
+    path: /etc/profile.d/java.sh
+    line: "{{ item }}"
+    create: true
+    mode: '0644'
+  loop:
+    - 'export JAVA_HOME="{{ java_home }}"'
+    - 'export PATH=$JAVA_HOME/bin:$PATH'
+  become: true
+
+- name: Verify Java installation
+  ansible.builtin.command: java -version
+  register: java_version_output
+  changed_when: false
+
+- name: Display Java version
+  ansible.builtin.debug:
+    msg: "Java installed: {{ java_version_output.stderr_lines[0] }}"
