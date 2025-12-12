@@ -39,7 +39,7 @@
           try:
               # Start timer
               t1 = int(time.time() * 1000)
-              
+
               # Read input file
               text_file = spark.sparkContext.textFile(input_path)
 
@@ -57,7 +57,7 @@
 
               # End timer
               t2 = int(time.time() * 1000)
-              
+
               print("=" * 50)
               print(f"time in ms: {t2 - t1}")
               print("=" * 50)
