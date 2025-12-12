@@ -54,3 +54,4 @@
     msg: >-
       Master UI: http://{{ ansible_default_ipv4.address }}:{{
       spark_master_webui_port }}
+      
