@@ -16,9 +16,14 @@ spark_master_ip: 10.0.0.10
 # Spark Configuration
 spark_version: "3.5.0"
 spark_hadoop_version: "3"
-spark_download_url: "https://archive.apache.org/dist/spark/spark-{{ spark_version }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+spark_download_url: >-
+  https://archive.apache.org/dist/spark/spark-{{
+  spark_version }}/spark-{{ spark_version }}-bin-hadoop{{
+  spark_hadoop_version }}.tgz
 spark_install_dir: /opt/spark
-spark_home: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}"
+spark_home: >-
+  {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
+  spark_hadoop_version }}
 
 # Java Configuration
 java_version: "11"
