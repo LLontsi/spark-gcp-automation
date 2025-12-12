@@ -1,0 +1,15 @@
+---
+# Ansible Lint configuration
+
+skip_list:
+  - line-length  # Ignorer les erreurs de longueur de ligne
+
+warn_list:
+  - experimental  # Avertir pour les fonctionnalités expérimentales
+
+exclude_paths:
+  - .git/
+  - .github/
+  - terraform/
+  - docs/
+  - scripts/
