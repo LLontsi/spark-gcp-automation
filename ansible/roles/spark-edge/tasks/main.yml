@@ -1,5 +1,5 @@
 ---
-# Configure Spark Edge node (client for job submission)
+# Configure Spark Edge (client) node
 
 - name: Install additional Python packages for PySpark
   ansible.builtin.pip:
@@ -13,10 +13,12 @@
 
 - name: Create user home directory for scripts
   ansible.builtin.file:
-    path: /home/{{ ansible_user }}/spark-jobs
+    path: "/home/{{ ansible_user }}/spark-jobs"
     state: directory
-    owner: "{{ ansible_user }}"
     mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
 
 - name: Create WordCount test script
   ansible.builtin.copy:
@@ -30,74 +32,86 @@
       import time
       from pyspark.sql import SparkSession
 
-      def main(input_path, output_path):
+      def main(input_file, output_file):
           # Create Spark session
           spark = SparkSession.builder \
               .appName("WordCount") \
+              .config("spark.eventLog.enabled", "false") \
               .getOrCreate()
 
+          start_time = time.time()
+
           try:
-              # Start timer
-              t1 = int(time.time() * 1000)
-
               # Read input file
-              text_file = spark.sparkContext.textFile(input_path)
+              text_file = spark.read.text(input_file)
 
-              # WordCount logic
-              counts = text_file \
-                  .flatMap(lambda line: line.split()) \
-                  .map(lambda word: (word.lower(), 1)) \
-                  .reduceByKey(lambda a, b: a + b)
-
-              # Sort by count (descending)
-              sorted_counts = counts.sortBy(lambda x: x[1], ascending=False)
+              # Perform word count
+              word_counts = text_file.rdd \
+                  .flatMap(lambda line: line.value.split()) \
+                  .map(lambda word: word.lower()) \
+                  .filter(lambda word: word.isalnum()) \
+                  .map(lambda word: (word, 1)) \
+                  .reduceByKey(lambda a, b: a + b) \
+                  .sortBy(lambda x: x[1], ascending=False)
 
               # Save results
-              sorted_counts.saveAsTextFile(output_path)
+              word_counts.saveAsTextFile(output_file)
 
-              # End timer
-              t2 = int(time.time() * 1000)
+              # Get top 20 words for display
+              top_words = word_counts.take(20)
 
-              print("=" * 50)
-              print(f"time in ms: {t2 - t1}")
-              print("=" * 50)
+              end_time = time.time()
+              execution_time = int((end_time - start_time) * 1000)
 
-              # Print top 20 words
-              top_words = sorted_counts.take(20)
+              print("\n" + "="*40)
+              print(f"time in ms: {execution_time}")
+              print("="*40)
               print("\nTop 20 words:")
               for word, count in top_words:
                   print(f"  {word}: {count}")
 
           except Exception as e:
-              print(f"Error during WordCount execution: {e}")
+              print(f"Error: {str(e)}")
               sys.exit(1)
           finally:
               spark.stop()
 
       if __name__ == "__main__":
-          if len(sys.argv) != 3:
-              print("Usage: wordcount.py <input_path> <output_path>")
-              sys.exit(1)
+          if len(sys.argv) < 3:
+              input_file = "/home/ansible/spark-jobs/sample.txt"
+              output_file = "/tmp/wordcount-output"
+          else:
+              input_file = sys.argv[1]
+              output_file = sys.argv[2]
 
-          input_file = sys.argv[1]
-          output_file = sys.argv[2]
+          print(f"Master: spark://10.0.0.10:7077")
+          print(f"Input: {input_file}")
+          print(f"Output: {output_file}")
+
           main(input_file, output_file)
-    dest: /home/{{ ansible_user }}/spark-jobs/wordcount.py
-    owner: "{{ ansible_user }}"
+
+          print(f"\nWordCount completed!")
+          print(f"Results in: {output_file}")
+    dest: "/home/{{ ansible_user }}/spark-jobs/wordcount.py"
     mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
 
 - name: Create sample input file
   ansible.builtin.copy:
     content: |
-      Apache Spark is a unified analytics engine for large-scale data processing.
-      Spark provides high-level APIs in Java, Scala, Python and R.
-      It also supports a rich set of higher-level tools including Spark SQL.
-      MLlib for machine learning, GraphX for graph processing.
-      Structured Streaming for incremental computation and stream processing.
-      Apache Spark achieves high performance for both batch and streaming data.
-    dest: /home/{{ ansible_user }}/spark-jobs/sample.txt
-    owner: "{{ ansible_user }}"
+      Apache Spark is a unified analytics engine for large-scale data
+      processing. Spark provides high-level APIs in Java, Scala, Python
+      and R. Spark supports batch processing, streaming, SQL queries,
+      machine learning, and graph processing. Spark runs on various
+      cluster managers including Apache Mesos, Hadoop YARN, and
+      Kubernetes. Spark is designed for speed and ease of use.
+    dest: "/home/{{ ansible_user }}/spark-jobs/sample.txt"
     mode: '0644'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
 
 - name: Create WordCount test runner script
   ansible.builtin.copy:
@@ -105,65 +119,59 @@
       #!/bin/bash
       set -e
 
-      MASTER_URL="spark://{{ spark_master_ip }}:{{ spark_master_port }}"
-      INPUT="${1:-/home/{{ ansible_user }}/spark-jobs/sample.txt}"
-      OUTPUT="${2:-/tmp/wordcount-output}"
-
       echo "Running WordCount test..."
-      echo "Master: $MASTER_URL"
-      echo "Input: $INPUT"
-      echo "Output: $OUTPUT"
 
-      # Clean old output
-      rm -rf "$OUTPUT"
+      # Remove old output if exists
+      rm -rf /tmp/wordcount-output
 
-      # Run WordCount
-      spark-submit \
-          --master "$MASTER_URL" \
-          --deploy-mode client \
-          --executor-memory 2G \
-          --executor-cores 1 \
-          --num-executors 3 \
-          /home/{{ ansible_user }}/spark-jobs/wordcount.py \
-          "$INPUT" \
-          "$OUTPUT"
+      # Run WordCount with spark-submit
+      /opt/spark/current/bin/spark-submit \
+        --master spark://10.0.0.10:7077 \
+        --deploy-mode client \
+        --executor-memory 2G \
+        --total-executor-cores 3 \
+        --driver-memory 1G \
+        /home/ansible/spark-jobs/wordcount.py
 
       echo ""
-      echo "WordCount completed!"
-      echo "Results in: $OUTPUT"
-    dest: /home/{{ ansible_user }}/spark-jobs/run_wordcount.sh
-    owner: "{{ ansible_user }}"
+      echo "WordCount completed successfully!"
+    dest: "/home/{{ ansible_user }}/spark-jobs/run_wordcount.sh"
     mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
 
 - name: Create cluster info script
   ansible.builtin.copy:
     content: |
       #!/bin/bash
-      echo "======================================"
-      echo "  Spark Cluster Information"
-      echo "======================================"
+      echo "Spark Cluster Information"
+      echo "========================="
       echo ""
-      echo "Spark Master:"
-      echo "  URL: spark://{{ spark_master_ip }}:{{ spark_master_port }}"
-      echo "  Web UI: http://{{ spark_master_ip }}:{{ spark_master_webui_port }}"
+      echo "Master UI: http://10.0.0.10:8080"
+      echo "Master URL: spark://10.0.0.10:7077"
       echo ""
-      echo "Workers:"
-      echo "  spark-worker-1: 10.0.0.11:{{ spark_worker_webui_port }}"
-      echo "  spark-worker-2: 10.0.0.12:{{ spark_worker_webui_port }}"
-      echo "  spark-worker-3: 10.0.0.13:{{ spark_worker_webui_port }}"
+      echo "Worker UIs:"
+      echo "  Worker 1: http://10.0.0.11:8081"
+      echo "  Worker 2: http://10.0.0.12:8081"
       echo ""
-      echo "To run WordCount test:"
-      echo "  cd ~/spark-jobs"
-      echo "  ./run_wordcount.sh"
-      echo ""
-    dest: /home/{{ ansible_user }}/cluster-info.sh
-    owner: "{{ ansible_user }}"
+      echo "SSH Commands:"
+      echo "  Master: ssh ansible@10.0.0.10"
+      echo "  Worker 1: ssh ansible@10.0.0.11"
+      echo "  Worker 2: ssh ansible@10.0.0.12"
+      echo "  Edge: ssh ansible@10.0.0.20"
+    dest: "/home/{{ ansible_user }}/spark-jobs/cluster-info.sh"
     mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
 
 - name: Display cluster info
   ansible.builtin.debug:
     msg:
       - "Edge node configured successfully!"
-      - "WordCount scripts location: /home/{{ ansible_user }}/spark-jobs/"
+      - >-
+        WordCount scripts location:
+        /home/{{ ansible_user }}/spark-jobs/
       - "Run: ssh {{ ansible_user }}@{{ ansible_default_ipv4.address }}"
       - "Then: cd ~/spark-jobs && ./run_wordcount.sh"

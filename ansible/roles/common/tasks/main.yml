@@ -25,13 +25,14 @@
     state: present
   become: true
 
-#- name: Set timezone
- # community.general.timezone:
-#    name: "{{ timezone }}"
-#  become: true
+# Timezone configuration (commented out - variable not defined)
+# - name: Set timezone
+#   community.general.timezone:
+#     name: "{{ timezone }}"
+#   become: true
 
 - name: Set locale
-  ansible.builtin.locale_gen:
+  community.general.locale_gen:
     name: "{{ locale }}"
     state: present
   become: true
@@ -40,7 +41,7 @@
   ansible.builtin.command: swapoff -a
   become: true
   changed_when: false
-  ignore_errors: true
+  failed_when: false
 
 - name: Comment out swap in /etc/fstab
   ansible.builtin.replace:
@@ -50,16 +51,16 @@
   become: true
 
 - name: Set system limits for Spark
-  ansible.builtin.pam_limits:
+  community.general.pam_limits:
     domain: "*"
     limit_type: "{{ item.limit_type }}"
     limit_item: "{{ item.limit_item }}"
     value: "{{ item.value }}"
   loop:
-    - { limit_type: 'soft', limit_item: 'nofile', value: '65536' }
-    - { limit_type: 'hard', limit_item: 'nofile', value: '65536' }
-    - { limit_type: 'soft', limit_item: 'nproc', value: '32768' }
-    - { limit_type: 'hard', limit_item: 'nproc', value: '32768' }
+    - {limit_type: 'soft', limit_item: 'nofile', value: '65536'}
+    - {limit_type: 'hard', limit_item: 'nofile', value: '65536'}
+    - {limit_type: 'soft', limit_item: 'nproc', value: '32768'}
+    - {limit_type: 'hard', limit_item: 'nproc', value: '32768'}
   become: true
 
 - name: Create spark directories

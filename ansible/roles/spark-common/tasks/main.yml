@@ -10,13 +10,17 @@
 
 - name: Check if Spark is already downloaded
   ansible.builtin.stat:
-    path: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+    path: >-
+      {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
+      spark_hadoop_version }}.tgz
   register: spark_archive
 
 - name: Download Apache Spark
   ansible.builtin.get_url:
     url: "{{ spark_download_url }}"
-    dest: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+    dest: >-
+      {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
+      spark_hadoop_version }}.tgz
     mode: '0644'
     timeout: 300
   become: true
@@ -29,7 +33,9 @@
 
 - name: Extract Spark archive
   ansible.builtin.unarchive:
-    src: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+    src: >-
+      {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
+      spark_hadoop_version }}.tgz
     dest: "{{ spark_install_dir }}"
     remote_src: true
     creates: "{{ spark_home }}"
@@ -83,11 +89,11 @@
     mode: '0644'
   become: true
 
-- name: Create log4j properties
+- name: Copy log4j properties if template exists
   ansible.builtin.copy:
     src: "{{ spark_home }}/conf/log4j2.properties.template"
     dest: "{{ spark_home }}/conf/log4j2.properties"
     remote_src: true
     mode: '0644'
   become: true
-  ignore_errors: true
+  failed_when: false
