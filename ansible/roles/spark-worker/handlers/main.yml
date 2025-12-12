@@ -1,0 +1,9 @@
+---
+# Handlers for Spark Worker
+
+- name: Restart Spark Worker
+  ansible.builtin.systemd:
+    name: spark-worker
+    state: restarted
+    daemon_reload: true
+  become: true

@@ -1,0 +1,42 @@
+---
+# Global variables for all hosts
+
+# System Configuration
+timezone: "Europe/Paris"
+locale: "en_US.UTF-8"
+
+# User Configuration
+ansible_user: ansible
+ansible_ssh_private_key_file: ~/.ssh/spark-cluster-key
+
+# Network Configuration
+spark_master_hostname: spark-master
+spark_master_ip: 10.0.0.10
+
+# Spark Configuration
+spark_version: "3.5.0"
+spark_hadoop_version: "3"
+spark_download_url: >-
+  https://archive.apache.org/dist/spark/spark-{{
+  spark_version }}/spark-{{ spark_version }}-bin-hadoop{{
+  spark_hadoop_version }}.tgz
+spark_install_dir: /opt/spark
+spark_home: >-
+  {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
+  spark_hadoop_version }}
+
+# Java Configuration
+java_version: "11"
+java_home: /usr/lib/jvm/java-11-openjdk-amd64
+
+# Spark Ports
+spark_master_port: 7077
+spark_master_webui_port: 8080
+spark_worker_webui_port: 8081
+spark_history_server_port: 18080
+
+# Performance Tuning (adapté pour e2-standard-2: 2 CPUs, 8GB RAM)
+spark_worker_cores: 2
+spark_worker_memory: "6g"
+spark_executor_memory: "4g"
+spark_driver_memory: "2g"
