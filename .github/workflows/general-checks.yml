@@ -24,4 +24,4 @@ jobs:
         test -d docs || { echo "docs/ directory missing"; exit 1; }
         test -f README.md || { echo "README.md missing"; exit 1; }
         test -f .gitignore || { echo ".gitignore missing"; exit 1; }
-        echo "✅ Project structure is valid"
+        echo "[SUCCESS] Project structure is valid"

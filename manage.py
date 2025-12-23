@@ -8,22 +8,27 @@ import time
 
 class SparkClusterCLI(cmd.Cmd):
     intro = r"""
-	   _____                   __        ______     __ 
-	  / ___/____  ____ ______/ /__     / ____/____/ /_
-	  \__ \/ __ \/ __ `/ ___/ //_/____/ /   / __  / __/
-	 ___/ / /_/ / /_/ / /  / ,< /____/ /___/ /_/ / /_  
-	/____/ .___/\__,_/_/  /_/|_|     \____/\__,_/\__/  
-	    /_/                                            
-    
-	Welcome to the Spark Cluster Manager.
-	Type 'help' or '?' to list commands.
-	Type 'help <command>' for specific command usage.
-"""
+   _____                  __      __  ___            _ __
+  / ___/____  ____ ______/ /__   /  |/  /___  ____  (_) /_____  _____
+  \__ \/ __ \/ __ `/ ___/ //_/  / /|_/ / __ \/ __ \/ / __/ __ \/ ___/
+ ___/ / /_/ / /_/ / /  / ,<    / /  / / /_/ / / / / / /_/ /_/ / /
+/____/ .___/\__,_/_/  /_/|_|  /_/  /_/\____/_/ /_/_/\__/\____/_/
+    /_/
+
+Welcome to the Spark Cluster Manager.
+Type 'help' or '?' to list commands.
+Type 'help <command>' for specific command usage.
+    """
+
     prompt = '(spark-cluster) '
 
     def __init__(self):
         super().__init__()
         self.inventory_file = 'ansible/inventory/hosts.yml'
+
+    def emptyline(self):
+        """Do nothing on empty input line."""
+        pass
 
     def do_about(self, arg):
         """Show project presentation and details."""
@@ -56,42 +61,190 @@ class SparkClusterCLI(cmd.Cmd):
         """
         Deploy and configure the cluster.
         
-        Usage: deploy
+        Usage: deploy [options]
+        
+        Options:
+        -b, --background       Run deployment in the background and log to 'deploy.log'.
+        -w, --workers <num>    Number of worker nodes to deploy (default: 2, max: 3).
         
         Steps:
-        1. Runs 'terraform apply' to provision VMs (Master, Workers, Edge).
-        2. Runs 'update_inventory.sh' to generate Ansible hosts file.
-        3. Runs 'ansible-playbook' to install Java, Spark, and Monitoring.
+        1. Runs 'terraform apply' to provision VMs.
+        2. Runs 'update_inventory.sh' to generate Ansible hosts.
+        3. Runs 'ansible-playbook' to configure the cluster.
         """
-        print("\t[INFO] Starting deployment...")
-        # 1. Terraform Apply
-        print("\n\t[1/3] Provisioning Infrastructure with Terraform...")
-        try:
-            subprocess.run(['terraform', 'apply', '-auto-approve'], cwd='terraform', check=True)
-        except subprocess.CalledProcessError:
-            print("\t[FAIL] Terraform failed.")
+        args = arg.split()
+        is_background = '-b' in args or '--background' in args
+        
+        # Parse worker count
+        worker_count = 2 # Default trial-safe count
+        if '-w' in args:
+            try:
+                idx = args.index('-w') + 1
+                worker_count = int(args[idx])
+            except (ValueError, IndexError):
+                print("\t[FAIL] Invalid worker count specified.")
+                return
+        elif '--workers' in args:
+             try:
+                idx = args.index('--workers') + 1
+                worker_count = int(args[idx])
+             except (ValueError, IndexError):
+                print("\t[FAIL] Invalid worker count specified.")
+                return
+
+        # Trial Safety Check
+        MAX_WORKERS = 3
+        if worker_count > MAX_WORKERS:
+            print(f"\t[WARN] Worker count {worker_count} exceeds trial limit of {MAX_WORKERS}.")
+            print(f"\t       Forcing worker count to {MAX_WORKERS} to prevent billing issues.")
+            worker_count = MAX_WORKERS
+        elif worker_count < 1:
+            print("\t[FAIL] Must have at least 1 worker.")
             return
 
-        # 2. Update Inventory
-        print("\n\t[2/3] Updating Ansible Inventory...")
-        try:
-            subprocess.run(['./update_inventory.sh'], cwd='ansible', check=True)
-        except subprocess.CalledProcessError:
-            print("\t[FAIL] Inventory update failed.")
-            return
+        print(f"\t[INFO] Deploying with {worker_count} workers.")
 
-        # 3. Ansible Configuration
-        print("\n\t[3/3] Configuring Cluster with Ansible...")
+        # Open in append mode or write? User likely wants fresh logs or appended? 'w' is safer for run separation.
+        log_file = open('deploy.log', 'w')
+        
+        if is_background:
+            print("\t[INFO] Deployment started in background.")
+            print("\t       View logs/progress with 'logs' command.")
+            
+            pid = os.fork()
+            if pid > 0:
+                return
+
+            # Child process
+            sys.stdout = log_file
+            sys.stderr = log_file
+            # Detach from tty? For simple fork, current logic is okayish mostly.
+        
+        def run_with_logging(command, cwd=None, env=None):
+            # If background, we already redirected sys.stdout/err to file. subprocess can inherit.
+            # If foreground, we want to capture pipe, write to file, AND print to console.
+            
+            if is_background:
+                subprocess.run(command, cwd=cwd, env=env, stdout=log_file, stderr=subprocess.STDOUT, check=False)
+                return 0 # We assume success or handle return code if needed, but simplified here.
+                # Actually we should check returncode.
+            else:
+                # Foreground: Tee behavior
+                process = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                for line in process.stdout:
+                    sys.stdout.write("\t" + line) # Indent the logs too? Or raw? User output shows Ansible output is raw strings. 
+                    # Let's indent slightly or raw. Tabs for consistency.
+                    # sys.stdout.write(line)
+                    log_file.write(line)
+                process.wait()
+                return process.returncode
+
+        # Helper to log with timestamp
+        def log(msg):
+            timestamp = time.strftime("[%Y-%m-%d %H:%M:%S]")
+            entry = f"{timestamp} {msg}"
+            log_file.write(entry + "\n")
+            log_file.flush()
+            if not is_background:
+                print("\t" + msg)
+
         try:
+            log("[INFO] Starting deployment...")
+            
+            # 1. Terraform Apply
+            log("[1/3] Provisioning Infrastructure with Terraform...")
+            # Note: terraform/ansible output might be large.
+            # Using simple run_with_logging logic.
+            # Terraform with variable
+            tf_cmd = ['terraform', 'apply', '-auto-approve', f'-var=num_workers={worker_count}']
+            
+            if is_background:
+                # Direct run
+                subprocess.run(tf_cmd, cwd='terraform', stdout=log_file, stderr=subprocess.STDOUT, check=True)
+            else:
+                # Tee
+                with subprocess.Popen(tf_cmd, cwd='terraform', 
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as p:
+                    for line in p.stdout:
+                        print("\t" + line, end='') 
+                        log_file.write(line)
+                    p.wait()
+                    if p.returncode != 0: raise subprocess.CalledProcessError(p.returncode, 'terraform')
+            
+            # 2. Update Inventory
+            log("[2/3] Updating Ansible Inventory...")
+            if is_background:
+                subprocess.run(['./update_inventory.sh'], cwd='ansible', stdout=log_file, stderr=subprocess.STDOUT, check=True)
+            else:
+                with subprocess.Popen(['./update_inventory.sh'], cwd='ansible', 
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as p:
+                    for line in p.stdout:
+                        print("\t" + line, end='')
+                        log_file.write(line)
+                    p.wait()
+                    if p.returncode != 0: raise subprocess.CalledProcessError(p.returncode, 'update_inventory.sh')
+
+            # 3. Ansible Configuration
+            log("[3/3] Configuring Cluster with Ansible...")
             env = os.environ.copy()
             env['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
-            subprocess.run(['ansible-playbook', '-i', 'inventory/hosts.yml', 'playbooks/site.yml'], 
-                           cwd='ansible', env=env, check=True)
-        except subprocess.CalledProcessError:
-            print("\t[FAIL] Ansible configuration failed.")
+            env['ANSIBLE_FORCE_COLOR'] = 'true'
+            
+            if is_background:
+                subprocess.run(['ansible-playbook', '-i', 'inventory/hosts.yml', 'playbooks/site.yml'], 
+                               cwd='ansible', env=env, stdout=log_file, stderr=subprocess.STDOUT, check=True)
+            else:
+                with subprocess.Popen(['ansible-playbook', '-i', 'inventory/hosts.yml', 'playbooks/site.yml'], 
+                                      cwd='ansible', env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as p:
+                    for line in p.stdout:
+                        print("\t" + line, end='')
+                        log_file.write(line)
+                    p.wait()
+                    if p.returncode != 0: raise subprocess.CalledProcessError(p.returncode, 'ansible-playbook')
+            
+            log("[SUCCESS] Deployment Complete!")
+
+        except subprocess.CalledProcessError as e:
+            log(f"[FAIL] Command failed: {e}")
+        except Exception as e:
+            log(f"[FAIL] Unexpected error: {e}")
+        finally:
+            log_file.close()
+            if is_background:
+                os._exit(0)
+
+    def do_logs(self, arg):
+        """Follow the deployment logs (Ctrl+C to stop)."""
+        if not os.path.exists('deploy.log'):
+            print("\t[WARN] No log file found.")
             return
         
-        print("\n\t[SUCCESS] Deployment Complete!")
+        try:
+            # Use tail -f
+            subprocess.run(['tail', '-f', 'deploy.log'])
+        except KeyboardInterrupt:
+            print("\n\t[INFO] Stopped following logs.")
+
+    def do_scale(self, arg):
+        """
+        Scale the cluster to a specific number of workers.
+        
+        Usage: scale <num>
+        
+        Example:
+        - scale 3   (Scale up to 3 workers)
+        - scale 1   (Scale down to 1 worker)
+        
+        Note: This effectively re-runs 'deploy' with the new worker count.
+        """
+        args = arg.split()
+        if not args:
+            print("\t[FAIL] Usage: scale <num_workers>")
+            return
+        
+        # Pass through to deploy logic
+        print(f"\t[INFO] Scaling cluster to {args[0]} workers...")
+        self.do_deploy(f"-w {args[0]}")
 
     def do_destroy(self, arg):
         """
@@ -109,25 +262,7 @@ class SparkClusterCLI(cmd.Cmd):
         else:
             print("\tHere is your cluster back")
 
-    def do_test(self, arg):
-        """
-        Run the functional test.
-        
-        Usage: test
-        
-        Actions:
-        - Connects to the Edge node via SSH.
-        - Submits a sample Spark job (WordCount) to the cluster.
-        - Verifies that the job completes and produces output.
-        """
-        print("\t[INFO] Running functional test...")
-        edge_ip = self._get_ip('edge')
-        if not edge_ip:
-            print("\t[FAIL] Could not find Edge node IP. Is the cluster deployed?")
-            return
-        
-        cmd = f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh'"
-        subprocess.run(cmd, shell=True)
+
 
     def do_ssh(self, arg):
         """
@@ -168,9 +303,26 @@ class SparkClusterCLI(cmd.Cmd):
             if not data or 'all' not in data:
                  raise ValueError("Invalid inventory format")
 
-            master_ip = data['all']['children']['master']['hosts']['spark-master']['ansible_host']
-            edge_ip = data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
-            workers = data['all']['children']['workers']['hosts']
+            # Helper to navigate potential nesting
+            def get_group(data, group_name):
+                # Try direct children of all
+                if group_name in data['all'].get('children', {}):
+                    return data['all']['children'][group_name]
+                # Try inside spark_cluster
+                if 'spark_cluster' in data['all'].get('children', {}):
+                     return data['all']['children']['spark_cluster']['children'].get(group_name)
+                return None
+
+            master_group = get_group(data, 'master')
+            edge_group = get_group(data, 'edge')
+            workers_group = get_group(data, 'workers')
+
+            if not master_group or not edge_group or not workers_group:
+                raise ValueError("Could not find cluster groups in inventory")
+
+            master_ip = master_group['hosts']['spark-master']['ansible_host']
+            edge_ip = edge_group['hosts']['spark-edge']['ansible_host']
+            workers = workers_group['hosts']
 
         except Exception as e:
             print(f"\n\t[FAIL] Error reading inventory: {e}")
@@ -212,24 +364,144 @@ class SparkClusterCLI(cmd.Cmd):
                 data = yaml.safe_load(f)
             
             if not data: return None
+            
+            # Helper to navigate potential nesting (duplicated but safe)
+            def get_group(data, group_name):
+                # Try direct children of all
+                if group_name in data['all'].get('children', {}):
+                    return data['all']['children'][group_name]
+                # Try inside spark_cluster
+                if 'spark_cluster' in data['all'].get('children', {}):
+                     return data['all']['children']['spark_cluster']['children'].get(group_name)
+                return None
+
+            master_group = get_group(data, 'master')
+            edge_group = get_group(data, 'edge')
+            workers_group = get_group(data, 'workers')
+
+            if not master_group or not edge_group or not workers_group:
+                return None
 
             if host_alias == 'master':
-                return data['all']['children']['master']['hosts']['spark-master']['ansible_host']
+                return master_group['hosts']['spark-master']['ansible_host']
             elif host_alias == 'edge':
-                return data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
+                return edge_group['hosts']['spark-edge']['ansible_host']
             elif host_alias == 'worker-1':
-                 return data['all']['children']['workers']['hosts']['spark-worker-1']['ansible_host']
+                 return workers_group['hosts']['spark-worker-1']['ansible_host']
             elif 'worker' in host_alias:
-                 # Try to find exact match or dynamic search
-                 if host_alias in data['all']['children']['workers']['hosts']:
-                     return data['all']['children']['workers']['hosts'][host_alias]['ansible_host']
-                 # Simple alias logic
-                 for w in data['all']['children']['workers']['hosts']:
+                 # Check specific match
+                 if host_alias in workers_group['hosts']:
+                     return workers_group['hosts'][host_alias]['ansible_host']
+                 # Partial match
+                 for w in workers_group['hosts']:
                      if host_alias in w:
-                          return data['all']['children']['workers']['hosts'][w]['ansible_host']
+                          return workers_group['hosts'][w]['ansible_host']
         except Exception:
             return None
         return None
+
+    def do_run(self, arg):
+        """
+        Run a Spark job (WordCount) on the cluster.
+        
+        Usage: run [options] [file_path]
+        
+        Options:
+        -u, --upload    Upload the file from local machine before running.
+        
+        Examples:
+        - run                  (Runs default test on sample.txt)
+        - run /tmp/data.txt    (Runs on existing REMOTE file at /tmp/data.txt)
+        - run -u my_data.txt   (Uploads LOCAL my_data.txt to all nodes, then runs)
+        """
+        args = arg.split()
+        
+        # Default defaults
+        should_upload = False
+        target_path = "/tmp/sample.txt"
+        
+        # Parse arguments
+        if '-u' in args or '--upload' in args:
+            should_upload = True
+            # Remove flag to find the file argument
+            args = [a for a in args if a not in ['-u', '--upload']]
+        
+        if args:
+            target_path = args[0]
+        elif not should_upload:
+            # No args, no upload -> default sample run
+            pass
+        else:
+            print("\t[FAIL] Upload flag specified but no file provided.")
+            return
+
+        # Handle Upload
+        if should_upload:
+            local_file = target_path
+            if not os.path.exists(local_file):
+                print(f"\t[FAIL] Local file '{local_file}' not found.")
+                return
+            
+            remote_path = f"/tmp/{os.path.basename(local_file)}"
+            print(f"\t[INFO] Uploading '{local_file}' to cluster at '{remote_path}'...")
+            
+            try:
+                with open(self.inventory_file) as f:
+                    data = yaml.safe_load(f)
+
+                # Helper to navigate potential nesting
+                def get_group(data, group_name):
+                    if group_name in data['all'].get('children', {}):
+                        return data['all']['children'][group_name]
+                    if 'spark_cluster' in data['all'].get('children', {}):
+                         return data['all']['children']['spark_cluster']['children'].get(group_name)
+                    return None
+
+                hosts = []
+                for g in ['master', 'edge', 'workers']:
+                    group = get_group(data, g)
+                    if group and 'hosts' in group:
+                        for h, info in group['hosts'].items():
+                            hosts.append((h, info['ansible_host']))
+
+                if not hosts:
+                    print("\t[FAIL] No hosts found in inventory.")
+                    return
+
+                # Perform SCP
+                success_count = 0
+                for name, ip in hosts:
+                    print(f"\t -> Uploading to {name} ({ip})...", end='', flush=True)
+                    cmd = f"scp -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark {local_file} ansible@{ip}:{remote_path}"
+                    ret = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if ret == 0: 
+                        print(" [OK]")
+                        success_count += 1
+                    else: 
+                        print(" [FAIL]")
+                
+                if success_count == 0:
+                    print("\t[FAIL] Upload failed on all nodes. Aborting run.")
+                    return
+                
+                # Update target path to the new remote location
+                target_path = remote_path
+
+            except Exception as e:
+                print(f"\n\t[FAIL] Inventory error during upload: {e}")
+                return
+
+        # Execute Job
+        print(f"\t[INFO] Submitting Spark job on '{target_path}'...")
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Could not find Edge node IP.")
+            return
+
+        cmd = f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
+        ret = subprocess.call(cmd, shell=True)
+        if ret != 0:
+            print(f"\t[FAIL] Spark job submission failed (Exit Code: {ret}).")
 
     def do_exit(self, arg):
         """Exit the shell."""
@@ -237,7 +509,11 @@ class SparkClusterCLI(cmd.Cmd):
         return True
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        SparkClusterCLI().onecmd(' '.join(sys.argv[1:]))
-    else:
-        SparkClusterCLI().cmdloop()
+    try:
+        if len(sys.argv) > 1:
+            SparkClusterCLI().onecmd(' '.join(sys.argv[1:]))
+        else:
+            SparkClusterCLI().cmdloop()
+    except KeyboardInterrupt:
+        print("\n\t[INFO] Interrupted by user. Exiting.")
+        sys.exit(0)

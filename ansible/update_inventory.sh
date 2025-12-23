@@ -94,7 +94,7 @@ cat >> "$INVENTORY_FILE" << EOF
 EOF
 
 echo ""
-echo "✅ Inventory updated successfully!"
+echo "[SUCCESS] Inventory updated successfully!"
 echo "File: $INVENTORY_FILE"
 echo ""
 echo "Test connectivity with:"
