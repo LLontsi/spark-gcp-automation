@@ -26,27 +26,33 @@ fi
 # Get IPs from Terraform
 echo "Retrieving IPs from Terraform..."
 
-MASTER_IP=$(terraform output -raw master_external_ip 2>/dev/null || echo "")
-EDGE_IP=$(terraform output -raw edge_external_ip 2>/dev/null || echo "")
-WORKER_IPS=$(terraform output -json worker_external_ips 2>/dev/null || echo "[]")
+MASTER_URL=$(terraform output -raw master_external_ip 2>/dev/null || echo "")
+MASTER_INT=$(terraform output -raw master_internal_ip 2>/dev/null || echo "")
+
+EDGE_URL=$(terraform output -raw edge_external_ip 2>/dev/null || echo "")
+EDGE_INT=$(terraform output -raw edge_internal_ip 2>/dev/null || echo "")
+
+WORKER_URLS=$(terraform output -json worker_external_ips 2>/dev/null || echo "[]")
+WORKER_INTS=$(terraform output -json worker_internal_ips 2>/dev/null || echo "[]")
 
 # Parse worker IPs
-NUM_WORKERS=$(echo "$WORKER_IPS" | jq '. | length')
+NUM_WORKERS=$(echo "$WORKER_URLS" | jq '. | length')
 
 # Check if we got the IPs
-if [ -z "$MASTER_IP" ] || [ "$MASTER_IP" == "null" ]; then
+if [ -z "$MASTER_URL" ] || [ "$MASTER_URL" == "null" ]; then
     echo "Error: Could not retrieve IPs from Terraform."
     echo "Is the infrastructure deployed?"
     exit 1
 fi
 
 echo "Retrieved IPs:"
-echo "  Master:   $MASTER_IP"
+echo "  Master:   $MASTER_URL (Int: $MASTER_INT)"
 for (( i=0; i<$NUM_WORKERS; i++ )); do
-    IP=$(echo "$WORKER_IPS" | jq -r ".[$i]")
-    echo "  Worker $((i+1)): $IP"
+    IP=$(echo "$WORKER_URLS" | jq -r ".[$i]")
+    INT=$(echo "$WORKER_INTS" | jq -r ".[$i]")
+    echo "  Worker $((i+1)): $IP (Int: $INT)"
 done
-echo "  Edge:     $EDGE_IP"
+echo "  Edge:     $EDGE_URL (Int: $EDGE_INT)"
 
 # Generate inventory 
 echo ""
@@ -64,7 +70,8 @@ all:
         master:
           hosts:
             spark-master:
-              ansible_host: $MASTER_IP
+              ansible_host: $MASTER_URL
+              internal_ip: $MASTER_INT
 
         workers:
           hosts:
@@ -72,10 +79,12 @@ EOF
 
 # Add workers dynamically
 for (( i=0; i<$NUM_WORKERS; i++ )); do
-    IP=$(echo "$WORKER_IPS" | jq -r ".[$i]")
+    IP=$(echo "$WORKER_URLS" | jq -r ".[$i]")
+    INT=$(echo "$WORKER_INTS" | jq -r ".[$i]")
     cat >> "$INVENTORY_FILE" << EOF
             spark-worker-$((i+1)):
               ansible_host: $IP
+              internal_ip: $INT
 EOF
 done
 
@@ -85,7 +94,9 @@ cat >> "$INVENTORY_FILE" << EOF
         edge:
           hosts:
             spark-edge:
-              ansible_host: $EDGE_IP
+              ansible_host: $EDGE_URL
+              internal_ip: $EDGE_INT
+
 
   vars:
     ansible_user: ansible

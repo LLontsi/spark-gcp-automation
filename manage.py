@@ -258,6 +258,10 @@ Type 'help <command>' for specific command usage.
         if confirm.lower() == 'y':
             print("\t[INFO] Destroying infrastructure...")
             subprocess.run(['terraform', 'destroy', '-auto-approve'], cwd='terraform')
+            # Clean up inventory to avoid stale status
+            if os.path.exists(self.inventory_file):
+                os.remove(self.inventory_file)
+                print("\t[INFO] Removed inventory file.")
             print("\t[SUCCESS] Destruction Complete.")
         else:
             print("\tHere is your cluster back")
