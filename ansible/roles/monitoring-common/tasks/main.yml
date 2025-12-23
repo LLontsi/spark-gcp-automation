@@ -45,7 +45,7 @@
 
       [Install]
       WantedBy=multi-user.target
-    notify: restart node_exporter
+  notify: restart node_exporter
 
 - name: Enable and start node_exporter
   ansible.builtin.systemd:

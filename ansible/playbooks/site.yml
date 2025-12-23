@@ -1,6 +1,15 @@
 ---
 # Main playbook to configure Spark cluster
 
+- name: Wait for SSH connection
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to be available
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 60
+
 - name: Load global variables
   hosts: all
   gather_facts: false
