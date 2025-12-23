@@ -8,16 +8,16 @@ import time
 
 class SparkClusterCLI(cmd.Cmd):
     intro = r"""
-   _____                   __        ______     __ 
-  / ___/____  ____ ______/ /__     / ____/____/ /_
-  \__ \/ __ \/ __ `/ ___/ //_/____/ /   / __  / __/
- ___/ / /_/ / /_/ / /  / ,< /____/ /___/ /_/ / /_  
-/____/ .___/\__,_/_/  /_/|_|     \____/\__,_/\__/  
-    /_/                                            
+	   _____                   __        ______     __ 
+	  / ___/____  ____ ______/ /__     / ____/____/ /_
+	  \__ \/ __ \/ __ `/ ___/ //_/____/ /   / __  / __/
+	 ___/ / /_/ / /_/ / /  / ,< /____/ /___/ /_/ / /_  
+	/____/ .___/\__,_/_/  /_/|_|     \____/\__,_/\__/  
+	    /_/                                            
     
-Welcome to the Spark Cluster Manager.
-Type 'help' or '?' to list commands.
-Type 'help <command>' for specific command usage.
+	Welcome to the Spark Cluster Manager.
+	Type 'help' or '?' to list commands.
+	Type 'help <command>' for specific command usage.
 """
     prompt = '(spark-cluster) '
 
@@ -28,26 +28,29 @@ Type 'help <command>' for specific command usage.
     def do_about(self, arg):
         """Show project presentation and details."""
         print("""
-================================================================
-          Spark on GCP Automation w/ Monitoring
-================================================================
-This project automates the deployment of an Apache Spark cluster
-on Google Cloud Platform using Terraform and Ansible.
+	================================================================
+	          Spark on GCP Automation w/ Monitoring
+	================================================================
+	This project automates the deployment of an Apache Spark cluster
+	on Google Cloud Platform using Terraform and Ansible.
 
-Features:
-- Infrastructure as Code (Terraform)
-- Configuration Management (Ansible)
-- Distributed Processing (Spark 3.5.0)
-- Functional Testing (WordCount on Edge Node)
-- Full Monitoring Stack (Prometheus + Grafana + Node Exporter)
+	Features:
+	- Infrastructure as Code (Terraform)
+	- Configuration Management (Ansible)
+	- Distributed Processing (Spark 3.5.0)
+	- Functional Testing (WordCount on Edge Node)
+	- Full Monitoring Stack (Prometheus + Grafana + Node Exporter)
 
-Authors: 
-    > LONTSIE LAMBOU Ronaldinho
-    > LADO SAHA
-Version: v1.1.0 (Innovations Branch)
-================================================================
+	Authors: 
+	    > LONTSIE LAMBOU Ronaldinho
+	    > LADO SAHA
+	Version: v1.1.0 (Innovations Branch)
+	================================================================
 """)
 
+    def do_clear(self, arg):
+        """Clear the terminal."""
+        os.system('clear')
 
     def do_deploy(self, arg):
         """
@@ -60,35 +63,35 @@ Version: v1.1.0 (Innovations Branch)
         2. Runs 'update_inventory.sh' to generate Ansible hosts file.
         3. Runs 'ansible-playbook' to install Java, Spark, and Monitoring.
         """
-        print("[INFO] Starting deployment...")
+        print("\t[INFO] Starting deployment...")
         # 1. Terraform Apply
-        print("\n[1/3] Provisioning Infrastructure with Terraform...")
+        print("\n\t[1/3] Provisioning Infrastructure with Terraform...")
         try:
             subprocess.run(['terraform', 'apply', '-auto-approve'], cwd='terraform', check=True)
         except subprocess.CalledProcessError:
-            print("[FAIL] Terraform failed.")
+            print("\t[FAIL] Terraform failed.")
             return
 
         # 2. Update Inventory
-        print("\n[2/3] Updating Ansible Inventory...")
+        print("\n\t[2/3] Updating Ansible Inventory...")
         try:
             subprocess.run(['./update_inventory.sh'], cwd='ansible', check=True)
         except subprocess.CalledProcessError:
-            print("[FAIL] Inventory update failed.")
+            print("\t[FAIL] Inventory update failed.")
             return
 
         # 3. Ansible Configuration
-        print("\n[3/3] Configuring Cluster with Ansible...")
+        print("\n\t[3/3] Configuring Cluster with Ansible...")
         try:
             env = os.environ.copy()
             env['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
             subprocess.run(['ansible-playbook', '-i', 'inventory/hosts.yml', 'playbooks/site.yml'], 
                            cwd='ansible', env=env, check=True)
         except subprocess.CalledProcessError:
-            print("[FAIL] Ansible configuration failed.")
+            print("\t[FAIL] Ansible configuration failed.")
             return
         
-        print("\n[SUCCESS] Deployment Complete!")
+        print("\n\t[SUCCESS] Deployment Complete!")
 
     def do_destroy(self, arg):
         """
@@ -98,13 +101,13 @@ Version: v1.1.0 (Innovations Branch)
         
         Warning: This will permanently delete all GCP resources (VMs, Network, Firewall).
         """
-        confirm = input("[WARN] Are you sure you want to DESTROY the cluster? (y/N): ")
+        confirm = input("\t[WARN] Are you sure you want to DESTROY the cluster? (y/N): ")
         if confirm.lower() == 'y':
-            print("[INFO] Destroying infrastructure...")
+            print("\t[INFO] Destroying infrastructure...")
             subprocess.run(['terraform', 'destroy', '-auto-approve'], cwd='terraform')
-            print("[SUCCESS] Destruction Complete.")
+            print("\t[SUCCESS] Destruction Complete.")
         else:
-            print("Here is your cluster back")
+            print("\tHere is your cluster back")
 
     def do_test(self, arg):
         """
@@ -117,10 +120,10 @@ Version: v1.1.0 (Innovations Branch)
         - Submits a sample Spark job (WordCount) to the cluster.
         - Verifies that the job completes and produces output.
         """
-        print("[INFO] Running functional test...")
+        print("\t[INFO] Running functional test...")
         edge_ip = self._get_ip('edge')
         if not edge_ip:
-            print("[FAIL] Could not find Edge node IP. Is the cluster deployed?")
+            print("\t[FAIL] Could not find Edge node IP. Is the cluster deployed?")
             return
         
         cmd = f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh'"
@@ -145,76 +148,92 @@ Version: v1.1.0 (Innovations Branch)
         
         ip = self._get_ip(target)
         if ip:
-            print(f"[INFO] Connecting to {target} ({ip})...")
+            print(f"\t[INFO] Connecting to {target} ({ip})...")
             subprocess.run(f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{ip}", shell=True)
         else:
-            print(f"[FAIL] Unknown host: {target}")
+            print(f"\t[FAIL] Unknown host: {target}")
 
     def do_status(self, arg):
         """Show cluster status and architecture."""
         if not os.path.exists(self.inventory_file):
-            print("[FAIL] Inventory not found. Cluster might not be deployed.")
+            print("\n\t[WARN] Inventory file not found.")
+            print("\t       The cluster does not appear to be deployed.")
+            print("\t       Run 'deploy' to provision the infrastructure.")
             return
 
-        with open(self.inventory_file) as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(self.inventory_file) as f:
+                data = yaml.safe_load(f)
+            
+            if not data or 'all' not in data:
+                 raise ValueError("Invalid inventory format")
 
-        master_ip = data['all']['children']['master']['hosts']['spark-master']['ansible_host']
-        edge_ip = data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
-        workers = data['all']['children']['workers']['hosts']
+            master_ip = data['all']['children']['master']['hosts']['spark-master']['ansible_host']
+            edge_ip = data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
+            workers = data['all']['children']['workers']['hosts']
 
-        print("\n[Cluster Architecture]")
-        print("========================")
-        print(f"      [ Internet ]")
-        print(f"           |")
-        print(f"      [ Firewall ]")
-        print(f"           |")
-        print(f"           v")
-        print(f" +-----------------------+       +----------------------+")
-        print(f" |      EDGE NODE        | ----> |     MASTER NODE      |")
-        print(f" | IP: {edge_ip:<15}   |       | IP: {master_ip:<16} |")
-        print(f" | (Client Gateway)      |       | (Resource Manager)   |")
-        print(f" +-----------------------+       | (Prometheus/Grafana) |")
-        print(f"                                 +----------------------+")
-        print(f"                                            |")
-        print(f"                                            v")
-        print(f"                             +------------------------------+")
+        except Exception as e:
+            print(f"\n\t[FAIL] Error reading inventory: {e}")
+            print("\t       Try running 'deploy' to regenerate it.")
+            return
+
+        print("\n\t[Cluster Architecture]")
+        print("\t========================")
+        print(f"\t      [ Internet ]" )
+        print(f"\t           |" )
+        print(f"\t      [ Firewall ]" )
+        print(f"\t           |" )
+        print(f"\t           v" )
+        print(f"\t +------------------------+       +-----------------------+")
+        print(f"\t |       EDGE NODE        | ----> |      MASTER NODE      |")
+        print(f"\t | IP: {edge_ip:<18} |       | IP: {master_ip:<17} |")
+        print(f"\t | (Client Gateway)       |       | (Resource Manager)    |")
+        print(f"\t +------------------------+       | (Prometheus/Grafana)  |")
+        print(f"\t                                  +-----------------------+")
+        print(f"\t                                             |")
+        print(f"\t                                             v")
+        print(f"\t                              +-------------------------------+")
         for name, info in workers.items():
-            print(f"                             | {name:<20} |")
-            print(f"                             | IP: {info['ansible_host']:<16}     |")
-        print(f"                             +------------------------------+")
+            print(f"\t                              | {name:<29} |")
+            print(f"\t                              | IP: {info['ansible_host']:<26} |")
+            print(f"\t                              |_______________________________|")
 
-        print("\n[Services]")
-        print(f" - Spark Master UI:  http://{master_ip}:8080")
-        print(f" - Grafana:          http://{master_ip}:3000 (admin/admin)")
-        print(f" - Prometheus:       http://{master_ip}:9090")
-        print(f" - Spark History:    http://{master_ip}:18080 (if configured)")
+        print("\n\t[Services]")
+        print(f"\t - Spark Master UI:  http://{master_ip}:8080")
+        print(f"\t - Grafana:          http://{master_ip}:3000 (admin/admin)")
+        print(f"\t - Prometheus:       http://{master_ip}:9090")
+        print(f"\t - Spark History:    http://{master_ip}:18080 (if configured)")
 
     def _get_ip(self, host_alias):
         if not os.path.exists(self.inventory_file):
             return None
-        with open(self.inventory_file) as f:
-            data = yaml.safe_load(f)
-        
-        if host_alias == 'master':
-            return data['all']['children']['master']['hosts']['spark-master']['ansible_host']
-        elif host_alias == 'edge':
-            return data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
-        elif host_alias == 'worker-1':
-             return data['all']['children']['workers']['hosts']['spark-worker-1']['ansible_host']
-        elif 'worker' in host_alias:
-             # Try to find exact match or dynamic search
-             if host_alias in data['all']['children']['workers']['hosts']:
-                 return data['all']['children']['workers']['hosts'][host_alias]['ansible_host']
-             # Simple alias logic
-             for w in data['all']['children']['workers']['hosts']:
-                 if host_alias in w:
-                      return data['all']['children']['workers']['hosts'][w]['ansible_host']
+        try:
+            with open(self.inventory_file) as f:
+                data = yaml.safe_load(f)
+            
+            if not data: return None
+
+            if host_alias == 'master':
+                return data['all']['children']['master']['hosts']['spark-master']['ansible_host']
+            elif host_alias == 'edge':
+                return data['all']['children']['edge']['hosts']['spark-edge']['ansible_host']
+            elif host_alias == 'worker-1':
+                 return data['all']['children']['workers']['hosts']['spark-worker-1']['ansible_host']
+            elif 'worker' in host_alias:
+                 # Try to find exact match or dynamic search
+                 if host_alias in data['all']['children']['workers']['hosts']:
+                     return data['all']['children']['workers']['hosts'][host_alias]['ansible_host']
+                 # Simple alias logic
+                 for w in data['all']['children']['workers']['hosts']:
+                     if host_alias in w:
+                          return data['all']['children']['workers']['hosts'][w]['ansible_host']
+        except Exception:
+            return None
         return None
 
     def do_exit(self, arg):
         """Exit the shell."""
-        print("Bye!")
+        print("\tBye!")
         return True
 
 if __name__ == '__main__':
