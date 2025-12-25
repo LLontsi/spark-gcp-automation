@@ -5,6 +5,7 @@ import subprocess
 import sys
 import yaml
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class SparkClusterCLI(cmd.Cmd):
     intro = r"""
@@ -483,17 +484,25 @@ Type 'help <command>' for specific command usage.
                     print("\t[FAIL] No hosts found in inventory.")
                     return
 
-                # Perform SCP
+                # Perform SCP in parallel
+                print(f"\t[INFO] Uploading to {len(hosts)} nodes in parallel...")
                 success_count = 0
-                for name, ip in hosts:
-                    print(f"\t -> Uploading to {name} ({ip})...", end='', flush=True)
+                
+                def upload_to_node(host_info):
+                    """Upload file to a single node."""
+                    name, ip = host_info
                     cmd = f"scp -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
                     ret = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if ret == 0: 
-                        print(" [OK]")
-                        success_count += 1
-                    else: 
-                        print(" [FAIL]")
+                    return (name, ip, ret == 0)
+                
+                with ThreadPoolExecutor(max_workers=min(len(hosts), 10)) as executor:
+                    futures = {executor.submit(upload_to_node, host): host for host in hosts}
+                    for future in as_completed(futures):
+                        name, ip, success = future.result()
+                        status = "[OK]" if success else "[FAIL]"
+                        print(f"\t -> {name} ({ip}): {status}")
+                        if success:
+                            success_count += 1
                 
                 if success_count == 0:
                     print("\t[FAIL] Upload failed on all nodes. Aborting run.")
