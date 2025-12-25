@@ -58,9 +58,9 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "expr": "100 - (avg by (node_name) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
           "interval": "",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{node_name}}",
           "refId": "A"
         }
       ],
@@ -147,7 +147,7 @@
         {
           "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
           "interval": "",
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{node_name}}",
           "refId": "A"
         }
       ],
@@ -234,13 +234,13 @@
         {
           "expr": "rate(node_network_receive_bytes_total[5m])",
           "interval": "",
-          "legendFormat": "{{instance}} - In",
+          "legendFormat": "{{node_name}} - In",
           "refId": "A"
         },
         {
           "expr": "rate(node_network_transmit_bytes_total[5m])",
           "interval": "",
-          "legendFormat": "{{instance}} - Out",
+          "legendFormat": "{{node_name}} - Out",
           "refId": "B"
         }
       ],
@@ -327,13 +327,13 @@
         {
           "expr": "rate(node_disk_read_bytes_total[5m])",
           "interval": "",
-          "legendFormat": "{{instance}} - Read",
+          "legendFormat": "{{node_name}} - Read",
           "refId": "A"
         },
         {
           "expr": "rate(node_disk_written_bytes_total[5m])",
           "interval": "",
-          "legendFormat": "{{instance}} - Write",
+          "legendFormat": "{{node_name}} - Write",
           "refId": "B"
         }
       ],
