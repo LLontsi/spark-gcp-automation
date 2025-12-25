@@ -45,7 +45,7 @@
 
 - name: Verify worker connection to master
   ansible.builtin.shell: |
-    curl -s http://{{ spark_master_ip }}:{{ spark_master_webui_port }} | grep -q "{{ ansible_hostname }}"
+    curl -s http://{{ spark_master_ip }}:{{ spark_master_webui_port }} | grep -q "{{ hostvars[inventory_hostname]['internal_ip'] | default(ansible_default_ipv4.address) }}"
   register: worker_registered
   retries: 5
   delay: 10
