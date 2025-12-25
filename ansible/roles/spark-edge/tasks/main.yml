@@ -117,9 +117,21 @@
           "$INPUT" \
           "$OUTPUT"
 
+
       echo ""
       echo "WordCount completed!"
       echo "Results in: $OUTPUT"
+      echo ""
+      echo "To view results:"
+      echo "  1. List all output files:"
+      echo "     ls -lh $OUTPUT/"
+      echo ""
+      echo "  2. View word counts (part files contain the results):"
+      echo "     cat $OUTPUT/part-*"
+      echo ""
+      echo "  3. View top 10 results:"
+      echo "     cat $OUTPUT/part-* | sort -t':' -k2 -nr | head -10"
+      echo ""
     dest: /home/{{ ansible_user }}/spark-jobs/run_wordcount.sh
     owner: "{{ ansible_user }}"
     mode: '0755'
