@@ -14,7 +14,7 @@ This project provides a complete automation solution for deploying production-re
 **Key Features:**
 - Fully automated cluster deployment in under 10 minutes
 - Integrated monitoring stack (Prometheus + Grafana + Node Exporter)
-- Scalable architecture (1-10 worker nodes)
+- Scalable architecture (1-3 worker nodes)
 - Security-hardened with configurable firewall rules
 - Interactive CLI for cluster management
 - CI/CD integration with automated security scanning
@@ -26,7 +26,7 @@ The deployed infrastructure consists of:
 | Component | Count | Purpose | Specifications |
 |-----------|-------|---------|----------------|
 | Master Node | 1 | Spark Master + HDFS NameNode + Prometheus + Grafana | n1-standard-4 (4 vCPU, 15GB RAM) |
-| Worker Nodes | 1-10 | Spark Workers + HDFS DataNodes | n1-standard-4 (4 vCPU, 15GB RAM) |
+| Worker Nodes | 1-3 | Spark Workers + HDFS DataNodes | n1-standard-4 (4 vCPU, 15GB RAM) |
 | Edge Node | 1 | Job submission + Client tools | n1-standard-2 (2 vCPU, 7.5GB RAM) |
 
 **Network Architecture:**

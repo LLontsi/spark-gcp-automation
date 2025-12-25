@@ -136,11 +136,11 @@ Type 'help <command>' for specific command usage.
                 print("\t[FAIL] Invalid worker count specified.")
                 return
 
-        # Trial Safety Check
+        # GCP Free Trial Safety Check (limited to 3 workers to conserve $300 credits)
         if worker_count > self.MAX_WORKERS:
-            print(f"\t[WARN] Worker count {worker_count} exceeds trial limit of {MAX_WORKERS}.")
-            print(f"\t       Forcing worker count to {MAX_WORKERS} to prevent billing issues.")
-            worker_count = MAX_WORKERS
+            print(f"\t[WARN] Worker count {worker_count} exceeds free trial limit of {self.MAX_WORKERS}.")
+            print(f"\t       Forcing worker count to {self.MAX_WORKERS} to prevent billing issues.")
+            worker_count = self.MAX_WORKERS
         elif worker_count < 1:
             print("\t[FAIL] Must have at least 1 worker.")
             return
