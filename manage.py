@@ -358,7 +358,6 @@ Type 'help <command>' for specific command usage.
         print(f"\t - Spark Master UI:  http://{master_ip}:8080")
         print(f"\t - Grafana:          http://{master_ip}:3000 (admin/admin)")
         print(f"\t - Prometheus:       http://{master_ip}:9090")
-        print(f"\t - Spark History:    http://{master_ip}:18080 (if configured)")
 
     def _get_ip(self, host_alias):
         if not os.path.exists(self.inventory_file):
