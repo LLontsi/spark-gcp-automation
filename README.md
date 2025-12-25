@@ -25,8 +25,8 @@ The deployed infrastructure consists of:
 
 | Component | Count | Purpose | Specifications |
 |-----------|-------|---------|----------------|
-| Master Node | 1 | Spark Master + HDFS NameNode + Prometheus + Grafana | n1-standard-4 (4 vCPU, 15GB RAM) |
-| Worker Nodes | 1-3 | Spark Workers + HDFS DataNodes | n1-standard-4 (4 vCPU, 15GB RAM) |
+| Master Node | 1 | Spark Master + Prometheus + Grafana | n1-standard-4 (4 vCPU, 15GB RAM) |
+| Worker Nodes | 1-3 | Spark Workers (Standalone Mode) | n1-standard-4 (4 vCPU, 15GB RAM) |
 | Edge Node | 1 | Job submission + Client tools | n1-standard-2 (2 vCPU, 7.5GB RAM) |
 
 **Network Architecture:**
@@ -256,6 +256,9 @@ Verify cluster functionality with the built-in WordCount test:
 ssh ansible@EDGE_IP
 cd ~/spark-jobs
 ./run_wordcount.sh /tmp/sample.txt
+
+# View results (output is in part-* files)
+cat /tmp/wordcount-output/part-*
 ```
 
 ### Custom Applications
@@ -290,6 +293,12 @@ spark-submit \
 
 **Issue**: Worker nodes not registering with master
 - **Solution**: Verify `spark_master_ip` in `ansible/group_vars/all.yml` matches actual master IP.
+
+**Issue**: SSH host key verification errors after recreating infrastructure
+- **Solution**: This is expected. The CLI automatically bypasses host key checking. If using manual SSH, add `-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`.
+
+**Issue**: WordCount results show only `_SUCCESS` file
+- **Solution**: Results are in `part-*` files. View with: `cat /tmp/wordcount-output/part-*`
 
 ### Logs
 
@@ -356,8 +365,6 @@ spark-gcp-automation/
 │   ├── main.tf                     # Root module
 │   ├── variables.tf                # Input variables
 │   └── outputs.tf                  # Output values
-├── scripts/
-│   └── update_inventory.sh         # Inventory generator
 ├── manage.py                       # CLI entrypoint
 └── README.md
 
