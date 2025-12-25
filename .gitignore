@@ -96,3 +96,4 @@ private/
 PR_DESCRIPTION.md
 .what_we_have_done.md
 .error.txt
+ansible/inventory/hosts.yml
