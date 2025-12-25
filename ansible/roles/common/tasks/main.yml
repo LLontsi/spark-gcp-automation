@@ -1,13 +1,7 @@
 ---
 # Common tasks for all nodes
 
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 3600
-  become: true
-
-- name: Install common packages
+- name: Install common packages (Debian/Ubuntu)
   ansible.builtin.apt:
     name:
       - curl
@@ -24,6 +18,26 @@
       - build-essential
     state: present
   become: true
+  when: ansible_os_family == "Debian"
+
+- name: Install common packages (RedHat/CentOS)
+  ansible.builtin.yum:
+    name:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - net-tools
+      - bind-utils  # equivalent to dnsutils
+      - unzip
+      - tar
+      - python3
+      - python3-pip
+      - "@Development Tools"  # equivalent to build-essential
+    state: present
+  become: true
+  when: ansible_os_family == "RedHat"
 
 - name: Set locale
   ansible.builtin.locale_gen:

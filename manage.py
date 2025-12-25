@@ -21,10 +21,22 @@ Type 'help <command>' for specific command usage.
     """
 
     prompt = '(spark-cluster) '
-
+    
+    # Constants
+    MAX_WORKERS = 3
+    DEFAULT_WORKERS = 2
+    SSH_KEY_PATH = '~/.ssh/gcp_spark'
+    DEPLOY_LOG = 'deploy.log'
+    
+    # Timeouts (seconds)
+    WAIT_SSH_TIMEOUT = 300
+    ANSIBLE_TIMEOUT = 3600
+    
     def __init__(self):
         super().__init__()
         self.inventory_file = 'ansible/inventory/hosts.yml'
+        self._inventory_cache = None
+        self._cache_time = 0
 
     def emptyline(self):
         """Do nothing on empty input line."""
@@ -57,6 +69,37 @@ Type 'help <command>' for specific command usage.
         """Clear the terminal."""
         os.system('clear')
 
+    def _load_inventory(self, force_reload=False):
+        """Load and cache inventory file."""
+        if force_reload or not self._inventory_cache or (time.time() - self._cache_time) > 60:
+            try:
+                with open(self.inventory_file) as f:
+                    self._inventory_cache = yaml.safe_load(f)
+                    self._cache_time = time.time()
+            except Exception:
+                self._inventory_cache = None
+        return self._inventory_cache
+    
+    def _get_inventory_group(self, data, group_name):
+        """Navigate nested inventory structure to find group.
+        
+        Args:
+            data: Parsed inventory YAML
+            group_name: Group to find (master/workers/edge)
+            
+        Returns:
+            Group dict or None if not found
+        """
+        if not data or 'all' not in data:
+            return None
+        # Try direct children of all
+        if group_name in data['all'].get('children', {}):
+            return data['all']['children'][group_name]
+        # Try inside spark_cluster
+        if 'spark_cluster' in data['all'].get('children', {}):
+            return data['all']['children']['spark_cluster']['children'].get(group_name)
+        return None
+
     def do_deploy(self, arg):
         """
         Deploy and configure the cluster.
@@ -76,7 +119,7 @@ Type 'help <command>' for specific command usage.
         is_background = '-b' in args or '--background' in args
         
         # Parse worker count
-        worker_count = 2 # Default trial-safe count
+        worker_count = self.DEFAULT_WORKERS
         if '-w' in args:
             try:
                 idx = args.index('-w') + 1
@@ -93,8 +136,7 @@ Type 'help <command>' for specific command usage.
                 return
 
         # Trial Safety Check
-        MAX_WORKERS = 3
-        if worker_count > MAX_WORKERS:
+        if worker_count > self.MAX_WORKERS:
             print(f"\t[WARN] Worker count {worker_count} exceeds trial limit of {MAX_WORKERS}.")
             print(f"\t       Forcing worker count to {MAX_WORKERS} to prevent billing issues.")
             worker_count = MAX_WORKERS
@@ -301,25 +343,14 @@ Type 'help <command>' for specific command usage.
             return
 
         try:
-            with open(self.inventory_file) as f:
-                data = yaml.safe_load(f)
+            data = self._load_inventory()
             
             if not data or 'all' not in data:
                  raise ValueError("Invalid inventory format")
 
-            # Helper to navigate potential nesting
-            def get_group(data, group_name):
-                # Try direct children of all
-                if group_name in data['all'].get('children', {}):
-                    return data['all']['children'][group_name]
-                # Try inside spark_cluster
-                if 'spark_cluster' in data['all'].get('children', {}):
-                     return data['all']['children']['spark_cluster']['children'].get(group_name)
-                return None
-
-            master_group = get_group(data, 'master')
-            edge_group = get_group(data, 'edge')
-            workers_group = get_group(data, 'workers')
+            master_group = self._get_inventory_group(data, 'master')
+            edge_group = self._get_inventory_group(data, 'edge')
+            workers_group = self._get_inventory_group(data, 'workers')
 
             if not master_group or not edge_group or not workers_group:
                 raise ValueError("Could not find cluster groups in inventory")
@@ -363,24 +394,12 @@ Type 'help <command>' for specific command usage.
         if not os.path.exists(self.inventory_file):
             return None
         try:
-            with open(self.inventory_file) as f:
-                data = yaml.safe_load(f)
-            
+            data = self._load_inventory()
             if not data: return None
             
-            # Helper to navigate potential nesting (duplicated but safe)
-            def get_group(data, group_name):
-                # Try direct children of all
-                if group_name in data['all'].get('children', {}):
-                    return data['all']['children'][group_name]
-                # Try inside spark_cluster
-                if 'spark_cluster' in data['all'].get('children', {}):
-                     return data['all']['children']['spark_cluster']['children'].get(group_name)
-                return None
-
-            master_group = get_group(data, 'master')
-            edge_group = get_group(data, 'edge')
-            workers_group = get_group(data, 'workers')
+            master_group = self._get_inventory_group(data, 'master')
+            edge_group = self._get_inventory_group(data, 'edge')
+            workers_group = self._get_inventory_group(data, 'workers')
 
             if not master_group or not edge_group or not workers_group:
                 return None
@@ -453,16 +472,9 @@ Type 'help <command>' for specific command usage.
                     data = yaml.safe_load(f)
 
                 # Helper to navigate potential nesting
-                def get_group(data, group_name):
-                    if group_name in data['all'].get('children', {}):
-                        return data['all']['children'][group_name]
-                    if 'spark_cluster' in data['all'].get('children', {}):
-                         return data['all']['children']['spark_cluster']['children'].get(group_name)
-                    return None
-
                 hosts = []
                 for g in ['master', 'edge', 'workers']:
-                    group = get_group(data, g)
+                    group = self._get_inventory_group(data, g)
                     if group and 'hosts' in group:
                         for h, info in group['hosts'].items():
                             hosts.append((h, info['ansible_host']))
