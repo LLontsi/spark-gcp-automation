@@ -5,6 +5,7 @@ import subprocess
 import sys
 import yaml
 import time
+import shlex
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class SparkClusterCLI(cmd.Cmd):
@@ -116,7 +117,7 @@ Type 'help <command>' for specific command usage.
         2. Runs 'update_inventory.sh' to generate Ansible hosts.
         3. Runs 'ansible-playbook' to configure the cluster.
         """
-        args = arg.split()
+        args = shlex.split(arg)
         is_background = '-b' in args or '--background' in args
         
         # Parse worker count
@@ -280,7 +281,7 @@ Type 'help <command>' for specific command usage.
         
         Note: This effectively re-runs 'deploy' with the new worker count.
         """
-        args = arg.split()
+        args = shlex.split(arg)
         if not args:
             print("\t[FAIL] Usage: scale <num_workers>")
             return
@@ -324,14 +325,13 @@ Type 'help <command>' for specific command usage.
         - ssh edge
         - ssh worker-1
         """
-        target = arg.strip()
-        if not target:
-            target = 'master'
+        args = shlex.split(arg)
+        target = args[0] if args else 'master'
         
         ip = self._get_ip(target)
         if ip:
             print(f"\t[INFO] Connecting to {target} ({ip})...")
-            subprocess.run(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{ip}", shell=True)
+            subprocess.run(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{ip}", shell=True)
         else:
             print(f"\t[FAIL] Unknown host: {target}")
 
@@ -365,31 +365,53 @@ Type 'help <command>' for specific command usage.
             print("\t       Try running 'deploy' to regenerate it.")
             return
 
-        print("\n\t[Cluster Architecture]")
-        print("\t========================")
-        print(f"\t      [ Internet ]" )
-        print(f"\t           |" )
-        print(f"\t      [ Firewall ]" )
-        print(f"\t           |" )
-        print(f"\t           v" )
-        print(f"\t +------------------------+       +-----------------------+")
-        print(f"\t |       EDGE NODE        | ----> |      MASTER NODE      |")
-        print(f"\t | IP: {edge_ip:<18} |       | IP: {master_ip:<17} |")
-        print(f"\t | (Client Gateway)       |       | (Resource Manager)    |")
-        print(f"\t +------------------------+       | (Prometheus/Grafana)  |")
-        print(f"\t                                  +-----------------------+")
-        print(f"\t                                             |")
-        print(f"\t                                             v")
-        print(f"\t                              +-------------------------------+")
-        for name, info in workers.items():
-            print(f"\t                              | {name:<29} |")
-            print(f"\t                              | IP: {info['ansible_host']:<26} |")
-            print(f"\t                              |_______________________________|")
-
-        print("\n\t[Services]")
-        print(f"\t - Spark Master UI:  http://{master_ip}:8080")
-        print(f"\t - Grafana:          http://{master_ip}:3000 (admin/admin)")
-        print(f"\t - Prometheus:       http://{master_ip}:9090")
+        # Beautiful status output
+        print("\n")
+        print("\t╔════════════════════════════════════════════════════════════════════╗")
+        print("\t║                     SPARK CLUSTER STATUS                           ║")
+        print("\t╚════════════════════════════════════════════════════════════════════╝")
+        print("\n")
+        
+        # print("\t┌─────────────────────────────────────────────────────────────────────┐")
+        # print("\t│                     CLUSTER ARCHITECTURE                            │")
+        # print("\t└─────────────────────────────────────────────────────────────────────┘")
+        
+        print("\n\t            [ Internet ]")
+        print("\t                 │")
+        print("\t                 │ (Firewall)")
+        print("\t                 ▼")
+        print(f"\t       ╔═══════════════════╗        ╔══════════════════════╗")
+        print(f"\t       ║   EDGE NODE       ║───────▶║   MASTER NODE        ║")
+        print(f"\t       ╠═══════════════════╣        ╠══════════════════════╣")
+        print(f"\t       ║ {edge_ip:<17} ║        ║ {master_ip:<20} ║")
+        print(f"\t       ║ Job Submission    ║        ║ Resource Manager     ║")
+        print(f"\t       ║ Client Gateway    ║        ║ Prometheus + Grafana ║")
+        print(f"\t       ╚═══════════════════╝        ╚══════════════════════╝")
+        print(f"\t                                              │")
+        print(f"\t                                              ▼")
+        
+        # Worker nodes section
+        worker_count = len(workers)
+        print(f"\t                       ╔═════════════════════════════════╗")
+        print(f"\t                       ║   WORKER NODES ({worker_count})              ║")
+        print(f"\t                       ╠═════════════════════════════════╣")
+        
+        for name, info in sorted(workers.items()):
+            worker_ip = info['ansible_host']
+            print(f"\t                       ║ • {name:<14} {worker_ip:<13}  ║")
+        
+        print(f"\t                       ╚═════════════════════════════════╝")
+        
+        # Services section
+        print("\n")
+        print("\t┌─────────────────────────────────────────────────────────────────────┐")
+        print("\t│                      AVAILABLE SERVICES                             │")
+        print("\t├─────────────────────────────────────────────────────────────────────┤")
+        print(f"\t│  Spark Master UI    http://{master_ip}:8080{' ' * (30 - len(master_ip))}      │")
+        print(f"\t│  Grafana Dashboard  http://{master_ip}:3000  (admin/admin){' ' * (8 - len(master_ip))}        │")
+        print(f"\t│  Prometheus Metrics http://{master_ip}:9090{' ' * (27 - len(master_ip))}         │")
+        print("\t└─────────────────────────────────────────────────────────────────────┘")
+        print("")
 
     def _get_ip(self, host_alias):
         if not os.path.exists(self.inventory_file):
@@ -437,7 +459,7 @@ Type 'help <command>' for specific command usage.
         - run /tmp/data.txt    (Runs on existing REMOTE file at /tmp/data.txt)
         - run -u my_data.txt   (Uploads LOCAL my_data.txt to all nodes, then runs)
         """
-        args = arg.split()
+        args = shlex.split(arg)
         
         # Default defaults
         should_upload = False
@@ -491,7 +513,7 @@ Type 'help <command>' for specific command usage.
                 def upload_to_node(host_info):
                     """Upload file to a single node."""
                     name, ip = host_info
-                    cmd = f"scp -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
+                    cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
                     ret = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     return (name, ip, ret == 0)
                 
@@ -522,7 +544,7 @@ Type 'help <command>' for specific command usage.
             print("\t[FAIL] Could not find Edge node IP.")
             return
 
-        cmd = f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
+        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
         ret = subprocess.call(cmd, shell=True)
         if ret != 0:
             print(f"\t[FAIL] Spark job submission failed (Exit Code: {ret}).")
