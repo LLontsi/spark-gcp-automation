@@ -25,3 +25,61 @@ jobs:
         test -f README.md || { echo "README.md missing"; exit 1; }
         test -f .gitignore || { echo ".gitignore missing"; exit 1; }
         echo "[SUCCESS] Project structure is valid"
+
+  terraform-security:
+    name: Terraform Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run tfsec
+      uses: aquasecurity/tfsec-action@v1.0.0
+      with:
+        working_directory: terraform
+        soft_fail: true  # Don't fail build, just warn
+        format: sarif
+        out: tfsec-results.sarif
+
+    - name: Upload SARIF file
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: tfsec-results.sarif
+
+  python-security:
+    name: Python Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install bandit
+      run: pip install bandit[toml]
+
+    - name: Run bandit security scan
+      run: |
+        bandit -r manage.py -f json -o bandit-report.json || true
+        bandit -r manage.py
+      continue-on-error: true
+
+  ansible-lint:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run ansible-lint
+      uses: ansible/ansible-lint@main
+      with:
+        working_directory: ansible
+      continue-on-error: true

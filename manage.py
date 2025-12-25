@@ -25,7 +25,7 @@ Type 'help <command>' for specific command usage.
     # Constants
     MAX_WORKERS = 3
     DEFAULT_WORKERS = 2
-    SSH_KEY_PATH = '~/.ssh/gcp_spark'
+    SSH_KEY_PATH = os.environ.get('SPARK_SSH_KEY', '~/.ssh/gcp_spark')
     DEPLOY_LOG = 'deploy.log'
     
     # Timeouts (seconds)
@@ -330,7 +330,7 @@ Type 'help <command>' for specific command usage.
         ip = self._get_ip(target)
         if ip:
             print(f"\t[INFO] Connecting to {target} ({ip})...")
-            subprocess.run(f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{ip}", shell=True)
+            subprocess.run(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{ip}", shell=True)
         else:
             print(f"\t[FAIL] Unknown host: {target}")
 
@@ -487,7 +487,7 @@ Type 'help <command>' for specific command usage.
                 success_count = 0
                 for name, ip in hosts:
                     print(f"\t -> Uploading to {name} ({ip})...", end='', flush=True)
-                    cmd = f"scp -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark {local_file} ansible@{ip}:{remote_path}"
+                    cmd = f"scp -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
                     ret = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     if ret == 0: 
                         print(" [OK]")
@@ -513,7 +513,7 @@ Type 'help <command>' for specific command usage.
             print("\t[FAIL] Could not find Edge node IP.")
             return
 
-        cmd = f"ssh -o StrictHostKeyChecking=no -i ~/.ssh/gcp_spark ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
+        cmd = f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
         ret = subprocess.call(cmd, shell=True)
         if ret != 0:
             print(f"\t[FAIL] Spark job submission failed (Exit Code: {ret}).")
