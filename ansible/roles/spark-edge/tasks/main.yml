@@ -39,7 +39,7 @@
           try:
               # Start timer
               t1 = int(time.time() * 1000)
-              
+
               # Read input file
               text_file = spark.sparkContext.textFile(input_path)
 
@@ -57,7 +57,7 @@
 
               # End timer
               t2 = int(time.time() * 1000)
-              
+
               print("=" * 50)
               print(f"time in ms: {t2 - t1}")
               print("=" * 50)
@@ -86,8 +86,6 @@
     owner: "{{ ansible_user }}"
     mode: '0755'
 
-
-
 - name: Create WordCount test runner script
   ansible.builtin.copy:
     content: |
@@ -106,17 +104,48 @@
       # Clean old output
       rm -rf "$OUTPUT"
 
+      # Dynamic executor configuration based on cluster size
+      # Count available workers by querying Spark master
+      NUM_WORKERS=$(curl -s "http://{{ spark_master_ip }}:{{ spark_master_webui_port }}/json/" | grep -o '"workers":\s*\[[^]]*\]' | grep -o '"id"' | wc -l || echo "2")
+
+      # Fallback if curl fails
+      if [ "$NUM_WORKERS" -eq 0 ]; then
+        NUM_WORKERS=2
+        echo "  Could not detect workers, using default: $NUM_WORKERS"
+      fi
+
+      # Worker specs (n1-standard-4: 4 vCPU, 15GB RAM)
+      CORES_PER_WORKER=4
+      MEMORY_PER_WORKER=15  # GB
+
+      # Calculate executor settings
+      # Strategy: 1 executor per worker, use 75% of resources
+      NUM_EXECUTORS=$NUM_WORKERS
+      EXECUTOR_CORES=$((CORES_PER_WORKER * 75 / 100))  # 3 cores
+      EXECUTOR_MEMORY=$((MEMORY_PER_WORKER * 75 / 100))  # 11GB
+
+      # Ensure minimums
+      [ "$EXECUTOR_CORES" -lt 1 ] && EXECUTOR_CORES=1
+      [ "$EXECUTOR_MEMORY" -lt 1 ] && EXECUTOR_MEMORY=1
+
+      echo ""
+      echo " Cluster Configuration:"
+      echo "   Workers detected: $NUM_WORKERS"
+      echo "   Executors: $NUM_EXECUTORS"
+      echo "   Cores per executor: $EXECUTOR_CORES"
+      echo "   Memory per executor: ${EXECUTOR_MEMORY}G"
+      echo ""
+
       # Run WordCount
       spark-submit \
           --master "$MASTER_URL" \
           --deploy-mode client \
-          --executor-memory 2G \
-          --executor-cores 1 \
-          --num-executors 3 \
+          --executor-memory "${EXECUTOR_MEMORY}G" \
+          --executor-cores "$EXECUTOR_CORES" \
+          --num-executors "$NUM_EXECUTORS" \
           /home/{{ ansible_user }}/spark-jobs/wordcount.py \
           "$INPUT" \
           "$OUTPUT"
-
 
       echo ""
       echo "WordCount completed!"
@@ -149,9 +178,9 @@
       echo "  Web UI: http://{{ spark_master_ip }}:{{ spark_master_webui_port }}"
       echo ""
       echo "Workers:"
-      echo "  spark-worker-1: 10.0.0.11:{{ spark_worker_webui_port }}"
-      echo "  spark-worker-2: 10.0.0.12:{{ spark_worker_webui_port }}"
-      echo "  spark-worker-3: 10.0.0.13:{{ spark_worker_webui_port }}"
+      {% for host in groups['workers'] %}
+      echo "  {{ host }}: {{ hostvars[host]['ansible_host'] }}:{{ spark_worker_webui_port }}"
+      {% endfor %}
       echo ""
       echo "To run WordCount test:"
       echo "  cd ~/spark-jobs"

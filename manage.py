@@ -110,7 +110,7 @@ Type 'help <command>' for specific command usage.
         
         Options:
         -b, --background       Run deployment in the background and log to 'deploy.log'.
-        -w, --workers <num>    Number of worker nodes to deploy (default: 2, max: 3).
+        -w, --workers <num>    Number of worker nodes to deploy (default: 2, max: N).
         
         Steps:
         1. Runs 'terraform apply' to provision VMs.
@@ -137,7 +137,7 @@ Type 'help <command>' for specific command usage.
                 print("\t[FAIL] Invalid worker count specified.")
                 return
 
-        # GCP Free Trial Safety Check (limited to 3 workers to conserve $300 credits)
+        # GCP Free Trial Safety Check (limited to  workers to conserve $300 credits)
         if worker_count > self.MAX_WORKERS:
             print(f"\t[WARN] Worker count {worker_count} exceeds free trial limit of {self.MAX_WORKERS}.")
             print(f"\t       Forcing worker count to {self.MAX_WORKERS} to prevent billing issues.")

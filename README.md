@@ -14,7 +14,7 @@ This project provides a complete automation solution for deploying production-re
 **Key Features:**
 - Fully automated cluster deployment in under 10 minutes
 - Integrated monitoring stack (Prometheus + Grafana + Node Exporter)
-- Scalable architecture (1-3 worker nodes)
+- Scalable architecture (1-N worker nodes)
 - Security-hardened with configurable firewall rules
 - Interactive CLI for cluster management
 - CI/CD integration with automated security scanning
@@ -26,7 +26,7 @@ The deployed infrastructure consists of:
 | Component | Count | Purpose | Specifications |
 |-----------|-------|---------|----------------|
 | Master Node | 1 | Spark Master + Prometheus + Grafana | n1-standard-4 (4 vCPU, 15GB RAM) |
-| Worker Nodes | 1-3 | Spark Workers (Standalone Mode) | n1-standard-4 (4 vCPU, 15GB RAM) |
+| Worker Nodes | 1-N | Spark Workers (Standalone Mode) | n1-standard-4 (4 vCPU, 15GB RAM) |
 | Edge Node | 1 | Job submission + Client tools | n1-standard-2 (2 vCPU, 7.5GB RAM) |
 
 **Network Architecture:**
@@ -297,9 +297,6 @@ spark-submit \
 **Issue**: SSH host key verification errors after recreating infrastructure
 - **Solution**: This is expected. The CLI automatically bypasses host key checking. If using manual SSH, add `-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`.
 
-**Issue**: WordCount results show only `_SUCCESS` file
-- **Solution**: Results are in `part-*` files. View with: `cat /tmp/wordcount-output/part-*`
-
 ### Logs
 
 - **Terraform**: Standard output during apply
@@ -388,15 +385,6 @@ Contributions are welcome. Please follow these guidelines:
    - Create feature branch from `main`
    - Include clear description of changes
    - Update documentation if needed
-
-## Roadmap
-
-- [ ] HDFS integration for distributed storage
-- [ ] Auto-scaling based on workload
-- [ ] Multi-region deployment support
-- [ ] Spot instance support for cost optimization
-- [ ] Integration with Cloud Storage (GCS)
-- [ ] Kubernetes deployment option
 
 ## License
 
