@@ -105,24 +105,47 @@
       rm -rf "$OUTPUT"
 
       # Dynamic executor configuration based on cluster size
-      # Count available workers by querying Spark master
-      NUM_WORKERS=$(curl -s "http://{{ spark_master_ip }}:{{ spark_master_webui_port }}/json/" | grep -o '"workers":\s*\[[^]]*\]' | grep -o '"id"' | wc -l || echo "2")
+      # Query Spark master and parse worker specs dynamically
+      set +e
+      JSON_RESP=$(curl -s --connect-timeout 2 "http://{{ spark_master_ip }}:{{ spark_master_webui_port }}/json/")
+      CURL_EXIT=$?
+      set -e
 
-      # Fallback if curl fails
-      if [ "$NUM_WORKERS" -eq 0 ]; then
-        NUM_WORKERS=2
-        echo "  Could not detect workers, using default: $NUM_WORKERS"
+      NUM_WORKERS=0
+      TOTAL_CORES=0
+      TOTAL_MEMORY=0
+
+      if [ $CURL_EXIT -eq 0 ] && [ -n "$JSON_RESP" ]; then
+          # Parse only ALIVE workers and sum their resources
+          # Use python3 for reliable JSON parsing
+          if command -v python3 &> /dev/null; then
+              read NUM_WORKERS TOTAL_CORES TOTAL_MEMORY <<< $(echo "$JSON_RESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);w=[x for x in d.get("workers",[]) if x.get("state")=="ALIVE"];cores=sum(x.get("cores",0) for x in w);mem=sum(x.get("memory",0) for x in w)//1024;print(f"{len(w)} {cores} {mem}")' 2>/dev/null || echo "0 0 0")
+          else
+              # Fallback: basic grep-based counting (less accurate)
+              NUM_WORKERS=$(echo "$JSON_RESP" | grep -o '"state"\s*:\s*"ALIVE"' | wc -l)
+          fi
+      fi
+      
+      # Fallback logic if detection failed
+      if [ "$NUM_WORKERS" -eq 0 ] || [ "$TOTAL_CORES" -eq 0 ]; then
+          echo "  [WARN] Failed to detect workers or resources"
+          echo "  [WARN] Using safe defaults: 2 workers, 4 cores, 12GB each"
+          NUM_WORKERS=2
+          TOTAL_CORES=8
+          TOTAL_MEMORY=24
       fi
 
-      # Worker specs (n1-standard-4: 4 vCPU, 15GB RAM)
-      CORES_PER_WORKER=4
-      MEMORY_PER_WORKER=15  # GB
-
-      # Calculate executor settings
-      # Strategy: 1 executor per worker, use 75% of resources
+      # Calculate executor settings based on detected resources
+      # Strategy: 1 executor per worker, use 75% of available resources
       NUM_EXECUTORS=$NUM_WORKERS
-      EXECUTOR_CORES=$((CORES_PER_WORKER * 75 / 100))  # 3 cores
-      EXECUTOR_MEMORY=$((MEMORY_PER_WORKER * 75 / 100))  # 11GB
+      
+      if [ "$NUM_WORKERS" -gt 0 ]; then
+          EXECUTOR_CORES=$((TOTAL_CORES * 75 / 100 / NUM_WORKERS))
+          EXECUTOR_MEMORY=$((TOTAL_MEMORY * 75 / 100 / NUM_WORKERS))
+      else
+          EXECUTOR_CORES=3
+          EXECUTOR_MEMORY=11
+      fi
 
       # Ensure minimums
       [ "$EXECUTOR_CORES" -lt 1 ] && EXECUTOR_CORES=1
@@ -130,10 +153,11 @@
 
       echo ""
       echo " Cluster Configuration:"
-      echo "   Workers detected: $NUM_WORKERS"
+      echo "   Workers detected: $NUM_WORKERS (ALIVE)"
+      echo "   Total resources: ${TOTAL_CORES} cores, ${TOTAL_MEMORY}GB RAM"
+      echo "   Allocated (75%): $((TOTAL_CORES * 75 / 100)) cores, $((TOTAL_MEMORY * 75 / 100))GB RAM"
       echo "   Executors: $NUM_EXECUTORS"
-      echo "   Cores per executor: $EXECUTOR_CORES"
-      echo "   Memory per executor: ${EXECUTOR_MEMORY}G"
+      echo "   Per executor: ${EXECUTOR_CORES} cores, ${EXECUTOR_MEMORY}GB RAM"
       echo ""
 
       # Run WordCount

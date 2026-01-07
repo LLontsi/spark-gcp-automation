@@ -514,15 +514,17 @@ Type 'help <command>' for specific command usage.
                     """Upload file to a single node."""
                     name, ip = host_info
                     cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
-                    ret = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    return (name, ip, ret == 0)
+                    result = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                    return (name, ip, result.returncode == 0, result.stderr)
                 
                 with ThreadPoolExecutor(max_workers=min(len(hosts), 10)) as executor:
                     futures = {executor.submit(upload_to_node, host): host for host in hosts}
                     for future in as_completed(futures):
-                        name, ip, success = future.result()
+                        name, ip, success, error_msg = future.result()
                         status = "[OK]" if success else "[FAIL]"
                         print(f"\t -> {name} ({ip}): {status}")
+                        if not success and error_msg:
+                            print(f"\t    Error: {error_msg.strip()}")
                         if success:
                             success_count += 1
                 
