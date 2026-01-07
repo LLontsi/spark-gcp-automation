@@ -160,6 +160,43 @@ The cluster supports dynamic scaling (N workers):
 - **CLI**: Inventory caching, parallel file uploads (ThreadPoolExecutor)
 - **Spark**: Dynamic executor allocation based on cluster size
 
+### Dynamic Resource Detection
+
+The cluster automatically adapts to scaling changes through intelligent resource detection:
+
+**How It Works:**
+1. **API Query**: Job submission script queries Spark Master REST API (`http://master:8080/json/`)
+2. **ALIVE Filtering**: Parses JSON response and filters only workers in `"state": "ALIVE"`
+3. **Resource Aggregation**: Sums cores and memory across all alive workers
+   ```python
+   total_cores = sum(worker['cores'] for worker in alive_workers)
+   total_memory_gb = sum(worker['memory'] for worker in alive_workers) // 1024
+   ```
+4. **75% Allocation**: Reserves 25% for OS, JVM overhead, and network I/O
+   ```bash
+   allocated_cores = total_cores * 0.75
+   allocated_memory = total_memory * 0.75
+   ```
+5. **Per-Executor Calculation**: Divides allocated resources equally across workers
+   ```bash
+   executor_cores = allocated_cores / num_workers
+   executor_memory = allocated_memory / num_workers
+   ```
+
+**Example Scaling Behavior:**
+
+| Workers | Total Resources | Allocated (75%) | Per Executor |
+|---------|----------------|-----------------|--------------|
+| 1       | 4 cores, 12GB  | 3 cores, 9GB    | 3 cores, 9GB |
+| 2       | 8 cores, 24GB  | 6 cores, 18GB   | 3 cores, 9GB |
+| 3       | 12 cores, 36GB | 9 cores, 27GB   | 3 cores, 9GB |
+
+**Benefits:**
+- ✅ Zero manual configuration when scaling
+- ✅ Optimal resource utilization regardless of cluster size
+- ✅ Prevents OOM crashes with safety buffer
+- ✅ Automatically excludes DEAD/offline workers
+
 ## Software Versions
 
 | Component | Version |

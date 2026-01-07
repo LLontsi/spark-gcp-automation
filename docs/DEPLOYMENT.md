@@ -107,11 +107,12 @@ You should see:
 
 **Expected output**:
 ```
-   Cluster Configuration:
-   Workers detected: 2
+ Cluster Configuration:
+   Workers detected: 2 (ALIVE)
+   Total resources: 8 cores, 24GB RAM
+   Allocated (75%): 6 cores, 18GB RAM
    Executors: 2
-   Cores per executor: 3
-   Memory per executor: 11G
+   Per executor: 3 cores, 9GB RAM
 
 [Spark job output...]
 

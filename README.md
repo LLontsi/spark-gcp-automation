@@ -13,8 +13,9 @@ This project provides a complete automation solution for deploying production-re
 
 **Key Features:**
 - Fully automated cluster deployment in under 10 minutes
+- **Dynamic Resource Detection** - Automatically detects worker specs and scales executor allocation
 - Integrated monitoring stack (Prometheus + Grafana + Node Exporter)
-- Scalable architecture (1-N worker nodes)
+- Scalable architecture (1-N worker nodes) with zero-config scaling
 - Security-hardened with configurable firewall rules
 - Interactive CLI for cluster management
 - CI/CD integration with automated security scanning
