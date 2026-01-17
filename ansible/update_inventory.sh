@@ -39,7 +39,7 @@ WORKER_INTS=$(terraform output -json worker_internal_ips 2>/dev/null || echo "[]
 NUM_WORKERS=$(echo "$WORKER_URLS" | jq '. | length')
 
 # Check if we got the IPs
-if [ -z "$MASTER_URL" ] || [ "$MASTER_URL" == "null" ]; then
+if [ -z "$MASTER_URL" ] || [ "$MASTER_URL" == "null" ] || [ -z "$MASTER_INT" ] || [ "$MASTER_INT" == "null" ]; then
     echo "Error: Could not retrieve IPs from Terraform."
     echo "Is the infrastructure deployed?"
     exit 1

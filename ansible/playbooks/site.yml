@@ -25,7 +25,7 @@
   hosts: all
   strategy: free  # Parallel execution for faster deployment
   become: true
-  gather_facts: false  # Use smart gathering from ansible.cfg
+  gather_facts: true  # Required for ansible_os_family and other facts
   vars_files:
     - ../group_vars/all.yml
     - ../group_vars/spark-cluster.yml

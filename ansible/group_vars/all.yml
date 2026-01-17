@@ -11,7 +11,7 @@ ansible_ssh_private_key_file: ~/.ssh/gcp_spark
 
 # Network Configuration
 spark_master_hostname: spark-master
-spark_master_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] | default(hostvars[groups['master'][0]]['ansible_host']) }}"
+spark_master_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
 
 # Spark Configuration
 spark_version: "3.5.0"
@@ -37,7 +37,7 @@ hadoop_install_dir: /opt/hadoop
 hadoop_home: "{{ hadoop_install_dir }}/current"
 
 # HDFS Settings
-hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] | default(hostvars[groups['master'][0]]['ansible_host']) }}"
+hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
 hdfs_replication_factor: 2
 hdfs_block_size: 134217728  # 128MB
 hdfs_datanode_data_dir: /data/hadoop/datanode

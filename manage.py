@@ -446,6 +446,37 @@ Type 'help <command>' for specific command usage.
             return None
         return None
 
+    def _get_internal_ip(self, host_alias):
+        """Get internal IP for VPC communication (HDFS, Spark, etc)."""
+        if not os.path.exists(self.inventory_file):
+            return None
+        try:
+            data = self._load_inventory()
+            if not data: return None
+            
+            master_group = self._get_inventory_group(data, 'master')
+            edge_group = self._get_inventory_group(data, 'edge')
+            workers_group = self._get_inventory_group(data, 'workers')
+
+            if not master_group or not edge_group or not workers_group:
+                return None
+
+            if host_alias == 'master':
+                return master_group['hosts']['spark-master'].get('internal_ip')
+            elif host_alias == 'edge':
+                return edge_group['hosts']['spark-edge'].get('internal_ip')
+            elif host_alias == 'worker-1':
+                 return workers_group['hosts']['spark-worker-1'].get('internal_ip')
+            elif 'worker' in host_alias:
+                 if host_alias in workers_group['hosts']:
+                     return workers_group['hosts'][host_alias].get('internal_ip')
+                 for w in workers_group['hosts']:
+                     if host_alias in w:
+                          return workers_group['hosts'][w].get('internal_ip')
+        except Exception:
+            return None
+        return None
+
     def do_run(self, arg):
         """
         Run a Spark job on the cluster.
@@ -552,9 +583,12 @@ Type 'help <command>' for specific command usage.
         edge_ip = self._get_ip('edge')
         if not edge_ip: return
         
-        # Use default HDFS sample
-        master_ip = self._get_ip('master')
-        target_path = f"hdfs://{master_ip}:9000/user/spark/data/sample.txt"
+        # Use default HDFS sample with INTERNAL IP
+        master_internal_ip = self._get_internal_ip('master')
+        if not master_internal_ip:
+            print("\t[FAIL] Could not determine master internal IP.")
+            return
+        target_path = f"hdfs://{master_internal_ip}:9000/user/spark/data/sample.txt"
         
         run_cmd = f"/home/ansible/spark-jobs/run_wordcount.sh '{target_path}'"
         subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} \"{run_cmd}\"", shell=True)
