@@ -8,12 +8,13 @@
     mode: '0755'
   become: true
 
+
 - name: Check if Hadoop is already downloaded
   ansible.builtin.stat:
     path: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
   register: hadoop_archive
 
-- name: Download Hadoop
+- name: Download Hadoop (async)
   ansible.builtin.get_url:
     url: >-
       https://dlcdn.apache.org/hadoop/common/hadoop-{{
@@ -23,11 +24,24 @@
     timeout: 600
   become: true
   when: not hadoop_archive.stat.exists
+  async: 600
+  poll: 0
+  register: hadoop_download_job
 
 - name: Check if Hadoop is already extracted
   ansible.builtin.stat:
     path: /opt/hadoop/hadoop-{{ hadoop_version }}
   register: hadoop_dir
+
+# Wait for download before extraction
+- name: Wait for Hadoop download to complete
+  ansible.builtin.async_status:
+    jid: "{{ hadoop_download_job.ansible_job_id }}"
+  register: hadoop_download_result
+  until: hadoop_download_result.finished
+  retries: 120
+  delay: 5
+  when: not hadoop_archive.stat.exists and hadoop_download_job is defined and hadoop_download_job.ansible_job_id is defined
 
 - name: Extract Hadoop archive
   ansible.builtin.unarchive:
@@ -37,6 +51,7 @@
     creates: /opt/hadoop/hadoop-{{ hadoop_version }}
   become: true
   when: not hadoop_dir.stat.exists
+
 
 - name: Create Hadoop symlink
   ansible.builtin.file:

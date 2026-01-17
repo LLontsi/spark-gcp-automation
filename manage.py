@@ -278,17 +278,75 @@ Type 'help <command>' for specific command usage.
         Example:
         - scale 3   (Scale up to 3 workers)
         - scale 1   (Scale down to 1 worker)
-        
-        Note: This effectively re-runs 'deploy' with the new worker count.
         """
         args = shlex.split(arg)
         if not args:
             print("\t[FAIL] Usage: scale <num_workers>")
             return
         
-        # Pass through to deploy logic
-        print(f"\t[INFO] Scaling cluster to {args[0]} workers...")
-        self.do_deploy(f"-w {args[0]}")
+        try:
+            target_workers = int(args[0])
+        except ValueError:
+            print("\t[FAIL] Worker count must be a number")
+            return
+        
+        if target_workers < 1:
+            print("\t[FAIL] Must have at least 1 worker")
+            return
+        
+        if target_workers > self.MAX_WORKERS:
+            print(f"\t[WARN] Limiting to {self.MAX_WORKERS} workers (free trial safety)")
+            target_workers = self.MAX_WORKERS
+        
+        # Check if cluster exists
+        if not os.path.exists(self.inventory_file):
+            print("\t[FAIL] No cluster found. Deploy first with 'deploy'")
+            return
+        
+        # Get current worker count
+        current_workers = self._get_current_worker_count()
+        if current_workers is None:
+            print("\t[WARN] Could not determine current worker count")
+            current_workers = "?"
+        
+        print(f"\t[INFO] Current workers: {current_workers}")
+        print(f"\t[INFO] Target workers:  {target_workers}")
+        
+        if current_workers == target_workers:
+            print("\t[INFO] Cluster already at target size. Nothing to do.")
+            return
+        
+        action = "Scaling up" if (isinstance(current_workers, int) and target_workers > current_workers) else "Scaling"
+        print(f"\t[INFO] {action} to {target_workers} workers...")
+        
+        # Trigger deployment with new worker count
+        self.do_deploy(f"-w {target_workers}")
+        
+        # Verify
+        print("\t[INFO] Verifying new worker count...")
+        import time
+        time.sleep(2)  # Give workers time to register
+        new_count = self._get_current_worker_count()
+        if new_count == target_workers:
+            print(f"\t[SUCCESS] Cluster scaled to {target_workers} workers!")
+        else:
+            print(f"\t[WARN] Expected {target_workers} workers, found {new_count}")
+            print("\t       Check 'status' for details")
+
+    def _get_current_worker_count(self):
+        """Helper to count workers in inventory."""
+        if not os.path.exists(self.inventory_file):
+            return None
+        try:
+            data = self._load_inventory()
+            if not data:
+                return None
+            workers_group = self._get_inventory_group(data, 'workers')
+            if not workers_group or 'hosts' not in workers_group:
+                return None
+            return len(workers_group['hosts'])
+        except Exception:
+            return None
 
     def do_destroy(self, arg):
         """

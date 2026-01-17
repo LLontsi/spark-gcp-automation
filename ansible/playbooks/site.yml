@@ -36,20 +36,44 @@
     - spark-common
     - hdfs-common
 
-- name: Configure Spark Master
+
+# Critical path: HDFS NameNode and Spark Master must complete before workers
+- name: Configure Spark Master (Critical Services)
   hosts: master
+  strategy: free
   become: true
   vars_files:
     - ../group_vars/all.yml
     - ../group_vars/spark-cluster.yml
   roles:
     - spark-master
+    - hdfs-namenode
+
+# Non-blocking: Edge node and monitoring can run in parallel with workers
+- name: Configure Monitoring Stack (Non-blocking)
+  hosts: master
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
     - prometheus
     - grafana
-    - hdfs-namenode
+
+- name: Configure Spark Edge node
+  hosts: edge
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - spark-edge
 
 - name: Configure Spark Workers
   hosts: workers
+  strategy: free
   become: true
   vars_files:
     - ../group_vars/all.yml
@@ -58,14 +82,6 @@
     - spark-worker
     - hdfs-datanode
 
-- name: Configure Spark Edge node
-  hosts: edge
-  become: true
-  vars_files:
-    - ../group_vars/all.yml
-    - ../group_vars/spark-cluster.yml
-  roles:
-    - spark-edge
 
 - name: Setup HDFS directory structure
   hosts: master

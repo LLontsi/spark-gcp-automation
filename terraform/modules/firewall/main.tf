@@ -137,6 +137,24 @@ resource "google_compute_firewall" "allow_hdfs_datanode" {
   description = "Allow HDFS DataNode communication (if HDFS is used)"
 }
 
+# Allow HDFS DataNode HTTP UI for WebHDFS browser access
+resource "google_compute_firewall" "allow_hdfs_datanode_ui" {
+  name    = "${var.network_name}-allow-hdfs-datanode-ui"
+  project = var.project_id
+  network = var.network_name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["9864"] # HDFS DataNode HTTP (WebHDFS)
+  }
+
+  source_ranges = var.allowed_ui_ips
+  target_tags   = var.tags_workers
+
+  description = "Allow access to HDFS DataNode Web UI for file downloads"
+}
+
+
 # Allow HDFS NameNode communication (optional, if using HDFS)
 resource "google_compute_firewall" "allow_hdfs_namenode" {
   name    = "${var.network_name}-allow-hdfs-namenode"

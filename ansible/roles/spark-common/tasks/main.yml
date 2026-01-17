@@ -12,7 +12,7 @@
     path: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
   register: spark_archive
 
-- name: Download Apache Spark
+- name: Download Apache Spark (async)
   ansible.builtin.get_url:
     url: "{{ spark_download_url }}"
     dest: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
@@ -20,11 +20,24 @@
     timeout: 300
   become: true
   when: not spark_archive.stat.exists
+  async: 300
+  poll: 0
+  register: spark_download_job
 
 - name: Check if Spark is already extracted
   ansible.builtin.stat:
     path: "{{ spark_home }}"
   register: spark_dir
+
+# Wait for download before extraction
+- name: Wait for Spark download to complete
+  ansible.builtin.async_status:
+    jid: "{{ spark_download_job.ansible_job_id }}"
+  register: spark_download_result
+  until: spark_download_result.finished
+  retries: 60
+  delay: 5
+  when: not spark_archive.stat.exists and spark_download_job is defined and spark_download_job.ansible_job_id is defined
 
 - name: Extract Spark archive
   ansible.builtin.unarchive:
