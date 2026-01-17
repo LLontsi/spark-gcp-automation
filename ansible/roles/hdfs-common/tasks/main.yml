@@ -1,0 +1,84 @@
+---
+# Install Hadoop/HDFS on all nodes
+
+- name: Create Hadoop installation directory
+  ansible.builtin.file:
+    path: /opt/hadoop
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Check if Hadoop is already downloaded
+  ansible.builtin.stat:
+    path: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
+  register: hadoop_archive
+
+- name: Download Hadoop
+  ansible.builtin.get_url:
+    url: >-
+      https://archive.apache.org/dist/hadoop/common/hadoop-{{
+      hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz
+    dest: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
+    mode: '0644'
+    timeout: 600
+  become: true
+  when: not hadoop_archive.stat.exists
+
+- name: Check if Hadoop is already extracted
+  ansible.builtin.stat:
+    path: /opt/hadoop/hadoop-{{ hadoop_version }}
+  register: hadoop_dir
+
+- name: Extract Hadoop archive
+  ansible.builtin.unarchive:
+    src: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
+    dest: /opt/hadoop
+    remote_src: true
+    creates: /opt/hadoop/hadoop-{{ hadoop_version }}
+  become: true
+  when: not hadoop_dir.stat.exists
+
+- name: Create Hadoop symlink
+  ansible.builtin.file:
+    src: /opt/hadoop/hadoop-{{ hadoop_version }}
+    dest: /opt/hadoop/current
+    state: link
+  become: true
+
+- name: Set HADOOP_HOME in /etc/environment
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'HADOOP_HOME="/opt/hadoop/current"'
+    create: true
+    mode: '0644'
+  become: true
+
+- name: Add Hadoop to PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile.d/hadoop.sh
+    line: "{{ item }}"
+    create: true
+    mode: '0644'
+  loop:
+    - 'export HADOOP_HOME="/opt/hadoop/current"'
+    - 'export HADOOP_CONF_DIR=$HADOOP_HOME/etc/hadoop'
+    - 'export PATH=$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH'
+  become: true
+
+- name: Create Hadoop data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /data/hadoop/namenode
+    - /data/hadoop/datanode
+    - /data/hadoop/tmp
+  become: true
+
+- name: Create hadoop-env.sh
+  ansible.builtin.template:
+    src: hadoop-env.sh.j2
+    dest: /opt/hadoop/current/etc/hadoop/hadoop-env.sh
+    mode: '0755'
+  become: true

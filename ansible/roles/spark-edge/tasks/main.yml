@@ -93,16 +93,19 @@
       set -e
 
       MASTER_URL="spark://{{ spark_master_ip }}:{{ spark_master_port }}"
-      INPUT="${1:-/tmp/sample.txt}"
-      OUTPUT="${2:-/tmp/wordcount-output}"
+      HDFS_BASE="hdfs://{{ hdfs_namenode_ip }}:{{ hdfs_namenode_port }}"
+      INPUT="${1:-${HDFS_BASE}/user/spark/data/sample.txt}"
+      OUTPUT="${2:-${HDFS_BASE}/user/spark/results/wordcount-$(date +%Y%m%d-%H%M%S)}"
 
-      echo "Running WordCount test..."
+      echo "Running WordCount test with HDFS..."
       echo "Master: $MASTER_URL"
+      echo "HDFS: $HDFS_BASE"
       echo "Input: $INPUT"
       echo "Output: $OUTPUT"
+      echo ""
 
-      # Clean old output
-      rm -rf "$OUTPUT"
+      # Clean old output if exists
+      /opt/hadoop/current/bin/hdfs dfs -rm -r -f "$OUTPUT" 2>/dev/null || true
 
       # Dynamic executor configuration based on cluster size
       # Query Spark master and parse worker specs dynamically
@@ -172,12 +175,16 @@
           "$OUTPUT"
 
       echo ""
-      echo "WordCount completed!"
-      echo "Results in: $OUTPUT"
+      echo "WordCount completed successfully!"
+      echo "Results saved to HDFS: $OUTPUT"
       echo ""
       echo "To view results:"
-      echo "  1. List all output files:"
-      echo "     ls -lh $OUTPUT/"
+      echo "  1. List output files in HDFS:"
+      echo "     hdfs dfs -ls $OUTPUT/"
+      echo "  2. View top 20 results:"
+      echo "     hdfs dfs -cat $OUTPUT/part-* | head -20"
+      echo "  3. Download to local:"
+      echo "     hdfs dfs -get $OUTPUT ./local-results/"
       echo ""
       echo "  2. View word counts (part files contain the results):"
       echo "     cat $OUTPUT/part-*"

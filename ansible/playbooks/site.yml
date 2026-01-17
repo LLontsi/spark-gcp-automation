@@ -33,6 +33,7 @@
     - monitoring-common
     - java
     - spark-common
+    - hdfs-common
 
 - name: Configure Spark Master
   hosts: master
@@ -44,6 +45,7 @@
     - spark-master
     - prometheus
     - grafana
+    - hdfs-namenode
 
 - name: Configure Spark Workers
   hosts: workers
@@ -53,6 +55,7 @@
     - ../group_vars/spark-cluster.yml
   roles:
     - spark-worker
+    - hdfs-datanode
 
 - name: Configure Spark Edge node
   hosts: edge
@@ -62,6 +65,15 @@
     - ../group_vars/spark-cluster.yml
   roles:
     - spark-edge
+
+- name: Setup HDFS directory structure
+  hosts: master
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - hdfs-setup
 
 - name: Display cluster summary
   hosts: localhost

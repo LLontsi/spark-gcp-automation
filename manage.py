@@ -551,6 +551,173 @@ Type 'help <command>' for specific command usage.
         if ret != 0:
             print(f"\t[FAIL] Spark job submission failed (Exit Code: {ret}).")
 
+    def do_upload(self, arg):
+        """
+        Upload a local file to HDFS.
+        
+        Usage: upload <local_file> [hdfs_path]
+        
+        Examples:
+        - upload data.csv                          (uploads to /user/spark/data/uploads/)
+        - upload data.csv /user/spark/custom/      (uploads to custom HDFS path)
+        """
+        args = shlex.split(arg)
+        if not args:
+            print("\t[FAIL] Please specify a file to upload.")
+            print("\tUsage: upload <local_file> [hdfs_path]")
+            return
+        
+        local_file = args[0]
+        if not os.path.exists(local_file):
+            print(f"\t[FAIL] Local file not found: {local_file}")
+            return
+        
+        # Default HDFS upload path
+        hdfs_path = args[1] if len(args) > 1 else "/user/spark/data/uploads/"
+        filename = os.path.basename(local_file)
+        
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Could not find edge node IP.")
+            return
+        
+        print(f"\t[INFO] Uploading {local_file} to HDFS...")
+        print(f"\t       Target: {hdfs_path}")
+        
+        # Step 1: SCP file to edge node
+        tmp_path = f"/tmp/{filename}"
+        scp_cmd = f"scp -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {local_file} ansible@{edge_ip}:{tmp_path}"
+        
+        ret = subprocess.call(scp_cmd, shell=True)
+        if ret != 0:
+            print(f"\t[FAIL] Failed to upload file to edge node.")
+            return
+        
+        # Step 2: Put file into HDFS from edge node
+        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -put -f {tmp_path} {hdfs_path}'"
+        
+        ret = subprocess.call(hdfs_cmd, shell=True)
+        if ret != 0:
+            print(f"\t[FAIL] Failed to put file into HDFS.")
+            return
+        
+        # Step 3: Clean up tmp file
+        cleanup_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} 'rm -f {tmp_path}'"
+        subprocess.call(cleanup_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        print(f"\t[SUCCESS] File uploaded to HDFS: {hdfs_path}{filename}")
+
+    def do_download(self, arg):
+        """
+        Download a file/directory from HDFS to local machine.
+        
+        Usage: download <hdfs_path> [local_path]
+        
+        Examples:
+        - download /user/spark/results/job-123             (downloads to ./results/)
+        - download /user/spark/results/job-123 ./my-data/  (downloads to custom local path)
+        """
+        args = shlex.split(arg)
+        if not args:
+            print("\t[FAIL] Please specify an HDFS path to download.")
+            print("\tUsage: download <hdfs_path> [local_path]")
+            return
+        
+        hdfs_path = args[0]
+        local_path = args[1] if len(args) > 1 else "./results/"
+        
+        # Create local directory if it doesn't exist
+        os.makedirs(local_path, exist_ok=True)
+        
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Could not find edge node IP.")
+            return
+        
+        print(f"\t[INFO] Downloading from HDFS...")
+        print(f"\t       Source: {hdfs_path}")
+        print(f"\t       Destination: {local_path}")
+        
+        # Step 1: Get from HDFS to edge node tmp
+        basename = os.path.basename(hdfs_path.rstrip('/'))
+        tmp_path = f"/tmp/{basename}"
+        
+        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -get {hdfs_path} {tmp_path}'"
+        
+        ret = subprocess.call(hdfs_cmd, shell=True)
+        if ret != 0:
+            print(f"\t[FAIL] Failed to get file from HDFS.")
+            return
+        
+        # Step 2: SCP from edge to local
+        scp_cmd = f"scp -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -r ansible@{edge_ip}:{tmp_path} {local_path}"
+        
+        ret = subprocess.call(scp_cmd, shell=True)
+        if ret != 0:
+            print(f"\t[FAIL] Failed to download file from edge node.")
+            return
+        
+        # Step 3: Clean up tmp
+        cleanup_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} 'rm -rf {tmp_path}'"
+        subprocess.call(cleanup_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        print(f"\t[SUCCESS] Downloaded to: {local_path}{basename}")
+
+    def do_hdfs(self, arg):
+        """
+        Execute HDFS commands directly (passthrough to 'hdfs dfs' on edge node).
+        
+        Usage: hdfs <command>
+        
+        Examples:
+        - hdfs ls /user/spark                    (list directory)
+        - hdfs du -h /user/spark/data            (show disk usage)
+        - hdfs df -h                             (show HDFS capacity)
+        - hdfs cat /user/spark/data/sample.txt   (view file contents)
+        """
+        if not arg:
+            print("\t[FAIL] Please specify an HDFS command.")
+            print("\tUsage: hdfs <command>")
+            print("\tExamples: hdfs ls /user/spark | hdfs df -h | hdfs du -h /user/spark/data")
+            return
+        
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Could not find edge node IP.")
+            return
+        
+        # Execute HDFS command (prepend 'dfs' to make it hdfs dfs <command>)
+        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs {arg}'"
+        
+        subprocess.call(hdfs_cmd, shell=True)
+
+    def do_results(self, arg):
+        """
+        List Spark job results stored in HDFS.
+        
+        Usage: results [limit]
+        
+        Examples:
+        - results       (show last 10 jobs)
+        - results 20    (show last 20 jobs)
+        """
+        args = shlex.split(arg)
+        limit = int(args[0]) if args and args[0].isdigit() else 10
+        
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Could not find edge node IP.")
+            return
+        
+        print(f"\t[INFO] Fetching last {limit} job results from HDFS...")
+        
+        # List results directory
+        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -ls /user/spark/results/ 2>/dev/null | tail -{limit}'"
+        
+        ret = subprocess.call(hdfs_cmd, shell=True)
+        if ret != 0:
+            print(f"\t[WARN] No results found or HDFS error.")
+
     def do_exit(self, arg):
         """Exit the shell."""
         print("\tBye!")

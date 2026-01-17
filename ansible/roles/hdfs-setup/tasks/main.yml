@@ -1,0 +1,82 @@
+---
+# Setup HDFS directories, permissions and test data
+
+- name: Wait for HDFS NameNode to be ready
+  ansible.builtin.wait_for:
+    host: "{{ hdfs_namenode_ip }}"
+    port: 9000
+    delay: 5
+    timeout: 60
+    state: started
+  become: false
+
+- name: Create HDFS base directories
+  ansible.builtin.command: >-
+    /opt/hadoop/current/bin/hdfs dfs -mkdir -p {{ item }}
+  loop:
+    - /user
+    - /user/spark
+    - /user/spark/data
+    - /user/spark/data/uploads
+    - /user/spark/data/datasets
+    - /user/spark/jobs
+    - /user/spark/jobs/scripts
+    - /user/spark/results
+    - /tmp
+  become: true
+  register: hdfs_mkdir
+  changed_when: hdfs_mkdir.rc == 0
+  failed_when: false
+
+- name: Set HDFS permissions
+  ansible.builtin.command: >-
+    /opt/hadoop/current/bin/hdfs dfs -chmod -R 777 {{ item }}
+  loop:
+    - /user
+    - /tmp
+  become: true
+  changed_when: false
+
+- name: Create sample data file locally
+  ansible.builtin.copy:
+    content: |
+      Apache Spark is a unified analytics engine for large-scale data processing.
+      Spark provides high-level APIs in Java, Scala, Python and R.
+      Spark supports batch processing, streaming, SQL queries, machine learning.
+      HDFS is the Hadoop Distributed File System for storing big data.
+      HDFS provides high throughput access to application data.
+      Spark and HDFS work together for distributed computing and big data analytics.
+      Machine learning with MLlib enables predictive analytics at scale.
+      Graph processing with GraphX analyzes network structures efficiently.
+      Structured Streaming processes real-time data with fault tolerance.
+      Spark SQL provides seamless integration with Hive and Parquet formats.
+    dest: /tmp/sample_hdfs.txt
+    mode: '0644'
+  become: true
+
+- name: Upload sample data to HDFS
+  ansible.builtin.command: >-
+    /opt/hadoop/current/bin/hdfs dfs -put -f
+    /tmp/sample_hdfs.txt /user/spark/data/sample.txt
+  become: true
+  changed_when: true
+
+- name: Remove temporary local file
+  ansible.builtin.file:
+    path: /tmp/sample_hdfs.txt
+    state: absent
+  become: true
+
+- name: Verify HDFS setup
+  ansible.builtin.command: >-
+    /opt/hadoop/current/bin/hdfs dfs -ls /user/spark
+  become: true
+  register: hdfs_ls
+  changed_when: false
+
+- name: Display HDFS status
+  ansible.builtin.debug:
+    msg:
+      - "HDFS setup completed successfully"
+      - "Sample file: hdfs://{{ hdfs_namenode_ip }}:9000/user/spark/data/sample.txt"
+      - "{{ hdfs_ls.stdout_lines }}"

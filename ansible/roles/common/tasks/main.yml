@@ -1,6 +1,23 @@
 ---
 # Common tasks for all nodes
 
+- name: Wait for system to be ready
+  ansible.builtin.wait_for:
+    path: /var/lib/cloud/instance/boot-finished
+    timeout: 300
+  become: true
+
+- name: Update apt cache (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  become: true
+  when: ansible_os_family == "Debian"
+  retries: 3
+  delay: 10
+  register: apt_update
+  until: apt_update is succeeded
+
 - name: Install common packages (Debian/Ubuntu)
   ansible.builtin.apt:
     name:
@@ -16,8 +33,13 @@
       - python3
       - build-essential
     state: present
+    update_cache: false
   become: true
   when: ansible_os_family == "Debian"
+  retries: 3
+  delay: 10
+  register: pkg_install
+  until: pkg_install is succeeded
 
 - name: Install pip for Python 3 (Debian/Ubuntu)
   ansible.builtin.shell: |

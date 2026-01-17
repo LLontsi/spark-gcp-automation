@@ -1,0 +1,70 @@
+---
+# Configure HDFS NameNode
+
+- name: Create core-site.xml
+  ansible.builtin.template:
+    src: core-site.xml.j2
+    dest: /opt/hadoop/current/etc/hadoop/core-site.xml
+    mode: '0644'
+  become: true
+
+- name: Create hdfs-site.xml for NameNode
+  ansible.builtin.template:
+    src: hdfs-site-namenode.xml.j2
+    dest: /opt/hadoop/current/etc/hadoop/hdfs-site.xml
+    mode: '0644'
+  become: true
+
+- name: Create workers file
+  ansible.builtin.template:
+    src: workers.j2
+    dest: /opt/hadoop/current/etc/hadoop/workers
+    mode: '0644'
+  become: true
+
+- name: Check if NameNode is formatted
+  ansible.builtin.stat:
+    path: /data/hadoop/namenode/current
+  register: namenode_formatted
+
+- name: Format NameNode
+  ansible.builtin.command: >-
+    /opt/hadoop/current/bin/hdfs namenode -format -force
+  become: true
+  when: not namenode_formatted.stat.exists
+
+- name: Create HDFS NameNode systemd service
+  ansible.builtin.template:
+    src: hdfs-namenode.service.j2
+    dest: /etc/systemd/system/hdfs-namenode.service
+    mode: '0644'
+  become: true
+  notify: Restart HDFS NameNode
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Enable and start HDFS NameNode
+  ansible.builtin.systemd:
+    name: hdfs-namenode
+    enabled: true
+    state: started
+  become: true
+
+- name: Wait for NameNode to be ready
+  ansible.builtin.wait_for:
+    host: "{{ hdfs_namenode_ip }}" 
+    port: 9000
+    delay: 5
+    timeout: 60
+  become: true
+
+- name: Wait for NameNode Web UI
+  ansible.builtin.wait_for:
+    host: 0.0.0.0
+    port: 9870
+    delay: 5
+    timeout: 60
+  become: true
