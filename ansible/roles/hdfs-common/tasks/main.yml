@@ -16,7 +16,7 @@
 - name: Download Hadoop
   ansible.builtin.get_url:
     url: >-
-      https://archive.apache.org/dist/hadoop/common/hadoop-{{
+      https://dlcdn.apache.org/hadoop/common/hadoop-{{
       hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz
     dest: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
     mode: '0644'

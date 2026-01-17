@@ -37,7 +37,7 @@ hadoop_install_dir: /opt/hadoop
 hadoop_home: "{{ hadoop_install_dir }}/current"
 
 # HDFS Settings
-hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
+hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] | default(hostvars[groups['master'][0]]['ansible_host']) }}"
 hdfs_replication_factor: 2
 hdfs_block_size: 134217728  # 128MB
 hdfs_datanode_data_dir: /data/hadoop/datanode

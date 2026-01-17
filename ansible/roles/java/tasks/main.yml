@@ -5,7 +5,7 @@
   ansible.builtin.apt:
     name: openjdk-11-jdk
     state: present
-    update_cache: true
+    update_cache: false  # Rely on common role cache
   become: true
 
 - name: Set JAVA_HOME in /etc/environment

@@ -21,7 +21,7 @@
   ansible.builtin.apt:
     name: grafana
     state: present
-    update_cache: true
+    update_cache: false  # Rely on common role cache
 
 - name: Enable and start grafana-server
   ansible.builtin.systemd:
