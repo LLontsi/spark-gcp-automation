@@ -408,6 +408,7 @@ Type 'help <command>' for specific command usage.
         print("\t│                      AVAILABLE SERVICES                             │")
         print("\t├─────────────────────────────────────────────────────────────────────┤")
         print(f"\t│  Spark Master UI    http://{master_ip}:8080{' ' * (30 - len(master_ip))}      │")
+        print(f"\t│  HDFS NameNode UI   http://{master_ip}:9870{' ' * (30 - len(master_ip))}      │")
         print(f"\t│  Grafana Dashboard  http://{master_ip}:3000  (admin/admin){' ' * (8 - len(master_ip))}        │")
         print(f"\t│  Prometheus Metrics http://{master_ip}:9090{' ' * (27 - len(master_ip))}         │")
         print("\t└─────────────────────────────────────────────────────────────────────┘")
@@ -447,109 +448,116 @@ Type 'help <command>' for specific command usage.
 
     def do_run(self, arg):
         """
-        Run a Spark job (WordCount) on the cluster.
+        Run a Spark job on the cluster.
         
-        Usage: run [options] [file_path]
+        Usage: run <script_path> [options] -- [args...]
         
         Options:
-        -u, --upload    Upload the file from local machine before running.
+        -u, --upload <file>   Upload a data file to HDFS before running.
+                              (Can be used multiple times)
         
         Examples:
-        - run                  (Runs default test on sample.txt)
-        - run /tmp/data.txt    (Runs on existing REMOTE file at /tmp/data.txt)
-        - run -u my_data.txt   (Uploads LOCAL my_data.txt to all nodes, then runs)
+        - run my_script.py                     (Run local script)
+        - run my_script.py -u data.csv         (Upload data, then run)
+        - run my_script.py -- --format json    (Pass args to script)
+        - run                                  (Run default WordCount test)
         """
         args = shlex.split(arg)
         
-        # Default defaults
-        should_upload = False
-        target_path = "/tmp/sample.txt"
+        # 1. Parse Args
+        script_path = None
+        upload_files = []
+        script_args = []
         
-        # Parse arguments
-        if '-u' in args or '--upload' in args:
-            should_upload = True
-            # Remove flag to find the file argument
-            args = [a for a in args if a not in ['-u', '--upload']]
-        
-        if args:
-            target_path = args[0]
-        elif not should_upload:
-            # No args, no upload -> default sample run
-            pass
-        else:
-            print("\t[FAIL] Upload flag specified but no file provided.")
-            return
-
-        # Handle Upload
-        if should_upload:
-            local_file = target_path
-            if not os.path.exists(local_file):
-                print(f"\t[FAIL] Local file '{local_file}' not found.")
-                return
+        # Handle "--" separator for script args
+        if '--' in args:
+            idx = args.index('--')
+            script_args = args[idx+1:]
+            args = args[:idx]
             
-            remote_path = f"/tmp/{os.path.basename(local_file)}"
-            print(f"\t[INFO] Uploading '{local_file}' to cluster at '{remote_path}'...")
+        # Parse uploads
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a in ['-u', '--upload']:
+                if i + 1 < len(args):
+                    upload_files.append(args[i+1])
+                    i += 1
+            elif not script_path:
+                script_path = a
+            i += 1
             
-            try:
-                with open(self.inventory_file) as f:
-                    data = yaml.safe_load(f)
+        # Default fallback
+        if not script_path:
+             print("\t[INFO] No script specified. Running default WordCount test...")
+             self._run_default_wordcount()
+             return
 
-                # Helper to navigate potential nesting
-                hosts = []
-                for g in ['master', 'edge', 'workers']:
-                    group = self._get_inventory_group(data, g)
-                    if group and 'hosts' in group:
-                        for h, info in group['hosts'].items():
-                            hosts.append((h, info['ansible_host']))
-
-                if not hosts:
-                    print("\t[FAIL] No hosts found in inventory.")
-                    return
-
-                # Perform SCP in parallel
-                print(f"\t[INFO] Uploading to {len(hosts)} nodes in parallel...")
-                success_count = 0
-                
-                def upload_to_node(host_info):
-                    """Upload file to a single node."""
-                    name, ip = host_info
-                    cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {local_file} ansible@{ip}:{remote_path}"
-                    result = subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-                    return (name, ip, result.returncode == 0, result.stderr)
-                
-                with ThreadPoolExecutor(max_workers=min(len(hosts), 10)) as executor:
-                    futures = {executor.submit(upload_to_node, host): host for host in hosts}
-                    for future in as_completed(futures):
-                        name, ip, success, error_msg = future.result()
-                        status = "[OK]" if success else "[FAIL]"
-                        print(f"\t -> {name} ({ip}): {status}")
-                        if not success and error_msg:
-                            print(f"\t    Error: {error_msg.strip()}")
-                        if success:
-                            success_count += 1
-                
-                if success_count == 0:
-                    print("\t[FAIL] Upload failed on all nodes. Aborting run.")
-                    return
-                
-                # Update target path to the new remote location
-                target_path = remote_path
-
-            except Exception as e:
-                print(f"\n\t[FAIL] Inventory error during upload: {e}")
-                return
-
-        # Execute Job
-        print(f"\t[INFO] Submitting Spark job on '{target_path}'...")
+        # 2. Upload Data Files to HDFS
         edge_ip = self._get_ip('edge')
         if not edge_ip:
-            print("\t[FAIL] Could not find Edge node IP.")
+            print("\t[FAIL] Edge node IP not found.")
             return
 
-        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cd ~/spark-jobs && ./run_wordcount.sh {target_path}'"
+        if upload_files:
+            print(f"\t[INFO] Uploading {len(upload_files)} data files to HDFS...")
+            for local_file in upload_files:
+                if not os.path.exists(local_file):
+                    print(f"\t[WARN] Data file not found: {local_file}")
+                    continue
+                
+                filename = os.path.basename(local_file)
+                hdfs_dest = f"/user/spark/data/uploads/{filename}"
+                tmp_remote = f"/tmp/{filename}"
+                
+                # SCP -> Edge -> HDFS Put
+                subprocess.call(f"scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {local_file} ansible@{edge_ip}:{tmp_remote}", shell=True)
+                subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -put -f {tmp_remote} {hdfs_dest}'", shell=True)
+                subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'rm -f {tmp_remote}'", shell=True)
+                print(f"\t       Uploaded: hdfs://...{hdfs_dest}")
+
+        # 3. Upload Script to Edge Node
+        if not os.path.exists(script_path):
+             print(f"\t[FAIL] Script file not found: {script_path}")
+             return
+
+        print(f"\t[INFO] Uploading script '{script_path}' to Edge node...")
+        script_name = os.path.basename(script_path)
+        remote_script_dir = "spark-jobs/user-scripts"
+        remote_script_path = f"{remote_script_dir}/{script_name}"
+        
+        # Ensure dir exists
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p {remote_script_dir}'", shell=True)
+        
+        # SCP script
+        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_script_path}", shell=True)
+
+        # 4. Execute via submit_job.sh
+        print(f"\t[INFO] Submitting job...")
+        
+        # Helper wrapper script path
+        submit_wrapper = "/home/ansible/spark-jobs/submit_job.sh"
+        
+        # Construct args string
+        remote_args = " ".join([shlex.quote(a) for a in script_args])
+        
+        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{submit_wrapper} {remote_script_path} {remote_args}'"
+        
         ret = subprocess.call(cmd, shell=True)
         if ret != 0:
-            print(f"\t[FAIL] Spark job submission failed (Exit Code: {ret}).")
+            print(f"\t[FAIL] Job submission failed (Exit Code: {ret}).")
+
+    def _run_default_wordcount(self):
+        """Helper to run the default wordcount test (legacy behavior)."""
+        edge_ip = self._get_ip('edge')
+        if not edge_ip: return
+        
+        # Use default HDFS sample
+        master_ip = self._get_ip('master')
+        target_path = f"hdfs://{master_ip}:9000/user/spark/data/sample.txt"
+        
+        run_cmd = f"/home/ansible/spark-jobs/run_wordcount.sh '{target_path}'"
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} \"{run_cmd}\"", shell=True)
 
     def do_upload(self, arg):
         """
@@ -665,30 +673,76 @@ Type 'help <command>' for specific command usage.
 
     def do_hdfs(self, arg):
         """
-        Execute HDFS commands directly (passthrough to 'hdfs dfs' on edge node).
+        HDFS Management Shell.
         
-        Usage: hdfs <command>
-        
-        Examples:
-        - hdfs ls /user/spark                    (list directory)
-        - hdfs du -h /user/spark/data            (show disk usage)
-        - hdfs df -h                             (show HDFS capacity)
-        - hdfs cat /user/spark/data/sample.txt   (view file contents)
+        Usage: 
+        - hdfs              (Enter interactive HDFS shell with aliases like ls, put, get)
+        - hdfs <command>    (Execute single HDFS command, e.g., hdfs ls /)
         """
-        if not arg:
-            print("\t[FAIL] Please specify an HDFS command.")
-            print("\tUsage: hdfs <command>")
-            print("\tExamples: hdfs ls /user/spark | hdfs df -h | hdfs du -h /user/spark/data")
-            return
-        
         edge_ip = self._get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Could not find edge node IP.")
             return
+
+        # Interactive Mode
+        if not arg or arg.strip() == "":
+            print("\t[INFO] Entering interactive HDFS shell...")
+            print("\t       Aliases: ls, put, get, rm, cat, mkdir, du, df")
+            print("\t       Type 'exit' or Ctrl+D to quit.")
+            
+            # Create remote .hdfs_rc file
+            # WE USE ABSOLUTE PATHS because non-login shells might not have HADOOP_HOME in PATH
+            rc_content = r"""
+HDFS_BIN=/opt/hadoop/current/bin/hdfs
+alias ls='$HDFS_BIN dfs -ls'
+alias put='$HDFS_BIN dfs -put'
+alias get='$HDFS_BIN dfs -get'
+alias rm='$HDFS_BIN dfs -rm'
+alias mkdir='$HDFS_BIN dfs -mkdir'
+alias cat='$HDFS_BIN dfs -cat'
+alias du='$HDFS_BIN dfs -du -h'
+alias df='$HDFS_BIN dfs -df -h'
+alias chown='$HDFS_BIN dfs -chown'
+alias chmod='$HDFS_BIN dfs -chmod'
+alias mv='$HDFS_BIN dfs -mv'
+alias cp='$HDFS_BIN dfs -cp'
+# Custom prompt
+export PS1="\[\033[01;32m\][hdfs-shell]\[\033[00m\] \u@\h:\w$ "
+"""
+            try:
+                with open("hdfs_rc.tmp", "w") as f:
+                    f.write(rc_content)
+                
+                # Check for existing ControlMaster socket or just run fast SCP
+                # We use -C (compression) and standard options
+                ssh_opts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPersist=600s -o ControlPath=~/.ssh/ansible-%r@%h:%p"
+                
+                subprocess.call(f"scp -q {ssh_opts} -i {self.SSH_KEY_PATH} hdfs_rc.tmp ansible@{edge_ip}:.hdfs_rc", shell=True)
+                os.remove("hdfs_rc.tmp")
+                
+                # SSH with RC file
+                subprocess.call(f"ssh -t {ssh_opts} -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'bash --rcfile .hdfs_rc'", shell=True)
+                
+            except Exception as e:
+                print(f"\t[FAIL] Error starting shell: {e}")
+            return
+
+        # Single Command Mode
+        # Auto-fix: Prepend dash if command is a known HDFS op and missing it
+        tokens = arg.split()
+        cmd = tokens[0]
+        known_ops = ['ls', 'du', 'df', 'put', 'get', 'rm', 'mkdir', 'cat', 'mv', 'cp', 'chmod', 'chown', 'tail', 'head', 'text', 'touchz']
         
-        # Execute HDFS command (prepend 'dfs' to make it hdfs dfs <command>)
-        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs {arg}'"
+        if cmd in known_ops:
+            tokens[0] = f"-{cmd}"
+            arg = " ".join(tokens)
+            
+        print(f"\t[EXEC] hdfs dfs {arg}")
         
+        # Enable ControlMaster for speedier repeated commands
+        ssh_opts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPersist=600s -o ControlPath=~/.ssh/ansible-%r@%h:%p"
+        
+        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} {ssh_opts} ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs {arg}'"
         subprocess.call(hdfs_cmd, shell=True)
 
     def do_results(self, arg):

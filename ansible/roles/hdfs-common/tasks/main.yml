@@ -82,3 +82,10 @@
     dest: /opt/hadoop/current/etc/hadoop/hadoop-env.sh
     mode: '0755'
   become: true
+
+- name: Create core-site.xml (HDFS Client Config)
+  ansible.builtin.template:
+    src: core-site.xml.j2
+    dest: /opt/hadoop/current/etc/hadoop/core-site.xml
+    mode: '0644'
+  become: true
