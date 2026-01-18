@@ -539,98 +539,180 @@ Type 'help <command>' for specific command usage.
         """
         Run a Spark job on the cluster.
         
-        Usage: run <script_path> [options] -- [args...]
-        
-        Options:
-        -u, --upload <file>   Upload a data file to HDFS before running.
-                              (Can be used multiple times)
+        Usage: run [TARGET] [ARGUMENTS...]
         
         Examples:
-        - run my_script.py                     (Run local script)
-        - run my_script.py -u data.csv         (Upload data, then run)
-        - run my_script.py -- --format json    (Pass args to script)
-        - run                                  (Run default WordCount test)
+        - run                                    # Show examples menu
+        - run wordcount                          # Built-in WordCount example
+        - run pi 1000                            # Calculate Pi with 1000 iterations
+        - run code.py                            # Run script (no arguments)
+        - run code.py arg1 arg2                  # Run script with arguments
+        - run code.py /user/spark/data/file.csv  # Pass HDFS path as argument
+        - run wrapper.sh --arg1 v1 --arg2 v2     # Execute custom wrapper script
+        
+        Note: Use 'upload' command to upload data files to HDFS first.
         """
         args = shlex.split(arg)
         
-        # 1. Parse Args
-        script_path = None
-        upload_files = []
-        script_args = []
+        # No args? Show examples menu
+        if not args:
+            self._show_examples_menu()
+            return
         
-        # Handle "--" separator for script args
-        if '--' in args:
-            idx = args.index('--')
-            script_args = args[idx+1:]
-            args = args[:idx]
-            
-        # Parse uploads
-        i = 0
-        while i < len(args):
-            a = args[i]
-            if a in ['-u', '--upload']:
-                if i + 1 < len(args):
-                    upload_files.append(args[i+1])
-                    i += 1
-            elif not script_path:
-                script_path = a
-            i += 1
-            
-        # Default fallback
-        if not script_path:
-             print("\t[INFO] No script specified. Running default WordCount test...")
-             self._run_default_wordcount()
-             return
+        target = args[0]
+        
+        # Check for built-in examples (keywords)
+        if target in ['wordcount', 'pi', 'examples']:
+            self._run_builtin_example(target, args[1:])
+            return
+        
+        # Detect file type
+        if not os.path.exists(target):
+            print(f"\t[FAIL] File not found: {target}")
+            print(f"\t       Try 'run examples' to see built-in options")
+            return
+        
+        # Route based on file extension
+        if target.endswith('.sh'):
+            self._run_wrapper_script(target, args[1:])
+        elif target.endswith('.py'):
+            self._run_pyspark_script(target, args[1:])
+        else:
+            print(f"\t[FAIL] Unsupported file type: {target}")
+            print(f"\t       Supported: .py (PySpark), .sh (Wrapper scripts)")
 
-        # 2. Upload Data Files to HDFS
+    def _show_examples_menu(self):
+        """Display available built-in examples."""
+        print("\n\t╔═══════════════════════════════════════════════════════════╗")
+        print("\t║               Built-in Spark Examples                    ║")
+        print("\t╚═══════════════════════════════════════════════════════════╝")
+        print("\t")
+        print("\t  1. wordcount              - Classic word frequency counter")
+        print("\t                               (Uses sample data in HDFS)")
+        print("\t")
+        print("\t  2. pi [iterations]        - Monte Carlo Pi estimation")
+        print("\t                               (Default: 1000 iterations)")
+        print("\t")
+        print("\t  3. examples               - Show this menu")
+        print("\t")
+        print("\t╔═══════════════════════════════════════════════════════════╗")
+        print("\t║  Usage: run <example_name> [args]                         ║")
+        print("\t║                                                           ║")
+        print("\t║  Example: run wordcount                                   ║")
+        print("\t║           run pi 10000                                    ║")
+        print("\t╚═══════════════════════════════════════════════════════════╝")
+        print()
+
+    def _run_builtin_example(self, example, args):
+        """Execute built-in example jobs."""
+        if example == 'examples':
+            self._show_examples_menu()
+        elif example == 'wordcount':
+            print("\t[INFO] Running built-in WordCount example...")
+            self._run_default_wordcount()
+        elif example == 'pi':
+            iterations = args[0] if args else "1000"
+            print(f"\t[INFO] Running Monte Carlo Pi estimation ({iterations} iterations)...")
+            self._run_pi_example(iterations)
+
+    def _run_pi_example(self, iterations):
+        """Run Monte Carlo Pi estimation example."""
         edge_ip = self._get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Edge node IP not found.")
             return
+        
+        master_internal_ip = self._get_internal_ip('master')
+        if not master_internal_ip:
+            print("\t[FAIL] Could not determine master internal IP.")
+            return
+        
+        # Create Pi estimation script inline
+        pi_script = f'''
+from pyspark.sql import SparkSession
+import sys
+import random
 
-        if upload_files:
-            print(f"\t[INFO] Uploading {len(upload_files)} data files to HDFS...")
-            for local_file in upload_files:
-                if not os.path.exists(local_file):
-                    print(f"\t[WARN] Data file not found: {local_file}")
-                    continue
-                
-                filename = os.path.basename(local_file)
-                hdfs_dest = f"/user/spark/data/uploads/{filename}"
-                tmp_remote = f"/tmp/{filename}"
-                
-                # SCP -> Edge -> HDFS Put
-                subprocess.call(f"scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {local_file} ansible@{edge_ip}:{tmp_remote}", shell=True)
-                subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -put -f {tmp_remote} {hdfs_dest}'", shell=True)
-                subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'rm -f {tmp_remote}'", shell=True)
-                print(f"\t       Uploaded: hdfs://...{hdfs_dest}")
+spark = SparkSession.builder.appName("MonteCarloPi").getOrCreate()
+sc = spark.sparkContext
 
-        # 3. Upload Script to Edge Node
-        if not os.path.exists(script_path):
-             print(f"\t[FAIL] Script file not found: {script_path}")
-             return
+iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 1000
 
-        print(f"\t[INFO] Uploading script '{script_path}' to Edge node...")
+def sample(_):
+    x, y = random.random(), random.random()
+    return 1 if x*x + y*y <= 1 else 0
+
+count = sc.parallelize(range(iterations)).map(sample).reduce(lambda a, b: a + b)
+pi_estimate = 4.0 * count / iterations
+
+print(f"\\nπ ≈ {{pi_estimate}}")
+print(f"Error: {{abs(pi_estimate - 3.14159265359):.6f}}\\n")
+
+spark.stop()
+'''
+        
+        # Write script to remote
+        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cat > /tmp/pi_example.py << \"EOFSCRIPT\"\n{pi_script}\nEOFSCRIPT'"
+        subprocess.call(cmd, shell=True)
+        
+        # Run it
+        run_cmd = f"/home/ansible/spark-jobs/submit_job.sh /tmp/pi_example.py {iterations}"
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{run_cmd}'", shell=True)
+
+    def _run_wrapper_script(self, script_path, remaining_args):
+        """Upload and execute a custom .sh wrapper script."""
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Edge node IP not found.")
+            return
+        
+        print(f"\t[INFO] Uploading wrapper script '{os.path.basename(script_path)}'...")
+        script_name = os.path.basename(script_path)
+        remote_path = f"/home/ansible/spark-jobs/user-scripts/{script_name}"
+        
+        # Upload
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p /home/ansible/spark-jobs/user-scripts'", shell=True, stdout=subprocess.DEVNULL)
+        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_path}", shell=True)
+        
+        # Make executable
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'chmod +x {remote_path}'", shell=True, stdout=subprocess.DEVNULL)
+        
+        # Execute with all arguments
+        print(f"\t[INFO] Executing wrapper script...")
+        args_str = " ".join([shlex.quote(a) for a in remaining_args])
+        ret = subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{remote_path} {args_str}'", shell=True)
+        
+        if ret != 0:
+            print(f"\t[FAIL] Wrapper script failed (Exit Code: {ret}).")
+
+    def _run_pyspark_script(self, script_path, remaining_args):
+        """
+        Simple PySpark script execution.
+        
+        Uploads the script and passes all arguments directly to it.
+        No auto-upload, no smart detection - user controls everything.
+        """
+        edge_ip = self._get_ip('edge')
+        if not edge_ip:
+            print("\t[FAIL] Edge node IP not found.")
+            return
+        
+        # Upload script
+        print(f"\t[INFO] Uploading script '{os.path.basename(script_path)}'...")
         script_name = os.path.basename(script_path)
         remote_script_dir = "spark-jobs/user-scripts"
         remote_script_path = f"{remote_script_dir}/{script_name}"
         
-        # Ensure dir exists
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p {remote_script_dir}'", shell=True)
+        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p {remote_script_dir}'", shell=True, stdout=subprocess.DEVNULL)
+        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_script_path}", shell=True)
         
-        # SCP script
-        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_script_path}", shell=True)
-
-        # 4. Execute via submit_job.sh
+        # Pass all arguments directly to script (no processing)
+        args_str = " ".join([shlex.quote(a) for a in remaining_args])
+        
+        # Submit job
         print(f"\t[INFO] Submitting job...")
-        
-        # Helper wrapper script path
         submit_wrapper = "/home/ansible/spark-jobs/submit_job.sh"
-        
-        # Construct args string
-        remote_args = " ".join([shlex.quote(a) for a in script_args])
-        
-        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{submit_wrapper} {remote_script_path} {remote_args}'"
+        cmd = f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{submit_wrapper} {remote_script_path} {args_str}'"
         
         ret = subprocess.call(cmd, shell=True)
         if ret != 0:
