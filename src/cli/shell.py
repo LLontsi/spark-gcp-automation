@@ -45,6 +45,7 @@ Type 'help <command>' for specific command usage.
         self.inventory_file = 'ansible/inventory/hosts.yml'
         self._inventory_cache = None
         self._cache_time = 0
+        self.verbose = True  # Default: show all logs (SSH, Spark, HDFS)
 
     def emptyline(self):
         """Do nothing on empty input line."""
@@ -76,6 +77,110 @@ Type 'help <command>' for specific command usage.
     def do_clear(self, arg):
         """Clear the terminal."""
         os.system('clear')
+
+    def do_set(self, arg):
+        """
+        Set global CLI configuration options.
+        
+        WHAT IT DOES:
+        Configure CLI behavior for all subsequent commands in the session.
+        Settings persist until you exit the CLI or change them again.
+        
+        Usage: set [option] [value]
+        
+        ╔═══════════════════════════════════════════════════════════════════╗
+        ║                      AVAILABLE SETTINGS                           ║
+        ╚═══════════════════════════════════════════════════════════════════╝
+        
+        1. VERBOSE - Control output verbosity
+        
+           Commands: set verbose on|off
+           Aliases:  set v on|off
+           
+           Values:
+           - on | true | 1 | yes     Enable verbose mode (default)
+           - off | false | 0 | no    Enable quiet mode
+           
+           Use Cases:
+           - Verbose ON:  Debugging, learning, troubleshooting
+           - Verbose OFF: Clean output, production use, scripts
+         
+        Note: Session-based settings are not persisted across CLI restarts.
+        """
+        
+        args = shlex.split(arg)
+        if not args:
+            # Show current settings
+            print(f"\n\t╔═══════════════════════════════════════════════════════════╗")
+            print(f"\t║              CURRENT CLI SETTINGS                         ║")
+            print(f"\t╚═══════════════════════════════════════════════════════════╝")
+            print(f"\t")
+            print(f"\t  Verbose:  {'ON' if self.verbose else 'OFF'}")
+            print(f"\t")
+            print(f"\t╔═══════════════════════════════════════════════════════════╗")
+            print(f"\t║  Usage: set <option> <value>                              ║")
+            print(f"\t║  Example: set verbose on|off                              ║")
+            print(f"\t║  Help: help set                                           ║")
+            print(f"\t╚═══════════════════════════════════════════════════════════╝")
+            print()
+            return
+        
+        option = args[0].lower()
+        
+        if option in ['verbose', 'v']:
+            if len(args) < 2:
+                print(f"\t[INFO] Verbose mode: {'ON' if self.verbose else 'OFF'}")
+                print(f"\t")
+                print(f"\tUsage: set verbose on|off")
+                print(f"\t       set v on|off          (short-hand)")
+                print(f"\t")
+                print(f"\tValues: on/off, true/false, 1/0, yes/no")
+                return
+            
+            value = args[1].lower()
+            if value in ['on', 'true', '1', 'yes']:
+                self.verbose = True
+                print("\t╔═══════════════════════════════════════════════════════════╗")
+                print("\t║  Verbose Mode: ON                                         ║")
+                print("\t╚═══════════════════════════════════════════════════════════╝")
+                print("\t")
+                print("\t  Output Behavior:")
+                print("\t  ✓ SSH warnings visible")
+                print("\t  ✓ Spark INFO/WARN logs shown")
+                print("\t  ✓ HDFS command output displayed")
+                print("\t  ✓ Progress messages enabled")
+                print("\t")
+                print("\t  Tip: Great for debugging and learning!")
+                print()
+            elif value in ['off', 'false', '0', 'no']:
+                self.verbose = False
+                print("\t╔═══════════════════════════════════════════════════════════╗")
+                print("\t║  Verbose Mode: OFF (Quiet)                                ║")
+                print("\t╚═══════════════════════════════════════════════════════════╝")
+                print("\t")
+                print("\t  Output Behavior:")
+                print("\t  ✓ SSH warnings suppressed")
+                print("\t  ✓ Spark INFO/WARN logs hidden")
+                print("\t  ✓ HDFS noise filtered")
+                print("\t  ✓ Only results and errors shown")
+                print("\t")
+                print("\t  Tip: Clean output perfect for production!")
+                print()
+            else:
+                print(f"\t[FAIL] Invalid value: '{value}'")
+                print(f"\t")
+                print(f"\t  Valid values: on, off, true, false, 1, 0, yes, no")
+                print(f"\t  Example: set verbose on")
+                print()
+        else:
+            print(f"\t[FAIL] Unknown option: '{option}'")
+            print(f"\t")
+            print(f"\t  Available options:")
+            print(f"\t  • verbose (v)  - Control output verbosity")
+            print(f"\t")
+            print(f"\t  Usage: set verbose on|off")
+            print(f"\t  Help:  help set")
+            print()
 
 
 
@@ -743,10 +848,10 @@ spark.stop()
         try:
             # Upload to edge node
             remote_path = "/tmp/pi_example.py"
-            ssh.upload(local_script, remote_path, edge_ip, quiet=True)
+            ssh.upload(local_script, remote_path, edge_ip, quiet=not self.verbose)
             
-            # Run it
-            ssh.submit_spark_job(edge_ip, remote_path, [iterations])
+            # Run it (respect verbosity setting)
+            ssh.submit_spark_job(edge_ip, remote_path, [iterations], quiet=not self.verbose)
         finally:
             # Clean up local temp file
             import os
@@ -759,19 +864,21 @@ spark.stop()
             print("\t[FAIL] Edge node IP not found.")
             return
         
-        print(f"\t[INFO] Uploading wrapper script '{os.path.basename(script_path)}'...")
+        if self.verbose:
+            print(f"\t[INFO] Uploading wrapper script '{os.path.basename(script_path)}'...")
         script_name = os.path.basename(script_path)
         remote_path = f"{config.REMOTE_SCRIPT_DIR}/{script_name}"
         
         # Create directory and upload script
         ssh.mkdir(edge_ip, config.REMOTE_SCRIPT_DIR)
-        ssh.upload(script_path, remote_path, edge_ip, quiet=True)
+        ssh.upload(script_path, remote_path, edge_ip, quiet=not self.verbose)
         ssh.chmod(edge_ip, remote_path, "+x")
         
         # Execute with all arguments
-        print(f"\t[INFO] Executing wrapper script...")
+        if self.verbose:
+            print(f"\t[INFO] Executing wrapper script...")
         args_str = " ".join([shlex.quote(a) for a in remaining_args])
-        ret = ssh.run(edge_ip, f"{remote_path} {args_str}")
+        ret = ssh.run(edge_ip, f"{remote_path} {args_str}", quiet=not self.verbose)
         
         if ret != 0:
             print(f"\t[FAIL] Wrapper script failed (Exit Code: {ret}).")
@@ -789,16 +896,18 @@ spark.stop()
             return
         
         # Upload script
-        print(f"\t[INFO] Uploading script '{os.path.basename(script_path)}'...")
+        if self.verbose:
+            print(f"\t[INFO] Uploading script '{os.path.basename(script_path)}'...")
         script_name = os.path.basename(script_path)
         remote_script_path = f"{config.REMOTE_SCRIPT_DIR}/{script_name}"
         
         ssh.mkdir(edge_ip, config.REMOTE_SCRIPT_DIR)
-        ssh.upload(script_path, remote_script_path, edge_ip, quiet=True)
+        ssh.upload(script_path, remote_script_path, edge_ip, quiet=not self.verbose)
         
         # Submit job
-        print(f"\t[INFO] Submitting job...")
-        ret = ssh.submit_spark_job(edge_ip, remote_script_path, remaining_args)
+        if self.verbose:
+            print(f"\t[INFO] Submitting job...")
+        ret = ssh.submit_spark_job(edge_ip, remote_script_path, remaining_args, quiet=not self.verbose)
         
         if ret != 0:
             print(f"\t[FAIL] Job submission failed (Exit Code: {ret}).")
@@ -817,7 +926,7 @@ spark.stop()
         
         target_path = f"{config.get_hdfs_url(master_internal_ip)}/user/spark/data/sample.txt"
         run_cmd = f"/home/ansible/spark-jobs/run_wordcount.sh '{target_path}'"
-        ssh.run(edge_ip, run_cmd)
+        ssh.run(edge_ip, run_cmd, quiet=not self.verbose)
 
     def do_upload(self, arg):
         """
@@ -868,11 +977,12 @@ spark.stop()
             print("\t[FAIL] Could not find edge node IP.")
             return
         
-        print(f"\t[INFO] Uploading {local_file} to HDFS...")
-        print(f"\t       Target: {hdfs_path}")
+        if self.verbose:
+            print(f"\t[INFO] Uploading {local_file} to HDFS...")
+            print(f"\t       Target: {hdfs_path}")
         
         # Upload to HDFS (handles SCP + put + cleanup automatically)
-        ret = ssh.upload_to_hdfs(local_file, hdfs_path, edge_ip)
+        ret = ssh.upload_to_hdfs(local_file, hdfs_path, edge_ip, quiet=not self.verbose)
         
         if ret != 0:
             print(f"\t[FAIL] Failed to upload file to HDFS.")

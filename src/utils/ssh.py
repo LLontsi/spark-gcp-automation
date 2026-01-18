@@ -151,7 +151,7 @@ class SSHClient:
         f_flag = "-f" if force else ""
         return self.run(host, f"{config.HADOOP_BIN} dfs -rm {r_flag} {f_flag} {hdfs_path}", quiet=True)
     
-    def upload_to_hdfs(self, local_file: str, hdfs_path: str, host: str) -> int:
+    def upload_to_hdfs(self, local_file: str, hdfs_path: str, host: str, quiet: bool = True) -> int:
         """
         Upload a local file to HDFS (handles temp transfer to remote host).
         
@@ -164,6 +164,7 @@ class SSHClient:
             local_file: Local file path
             hdfs_path: HDFS destination path
             host: Remote host (usually edge node)
+            quiet: If True, suppress transfer output
             
         Returns:
             int: Exit code (0 for success)
@@ -173,7 +174,7 @@ class SSHClient:
         tmp_remote = f"/tmp/{filename}"
         
         # SCP to remote
-        ret = self.upload(local_file, tmp_remote, host, quiet=True)
+        ret = self.upload(local_file, tmp_remote, host, quiet=quiet)
         if ret != 0:
             return ret
         
@@ -185,7 +186,7 @@ class SSHClient:
         
         return ret
     
-    def submit_spark_job(self, host: str, script_path: str, args: List[str]) -> int:
+    def submit_spark_job(self, host: str, script_path: str, args: List[str], quiet: bool = False) -> int:
         """
         Submit a Spark job via submit_job.sh wrapper.
         
@@ -193,13 +194,14 @@ class SSHClient:
             host: Edge node IP
             script_path: Remote path to script
             args: Arguments to pass to script
+            quiet: If True, suppress Spark INFO/WARN logs
             
         Returns:
             int: Exit code
         """
         args_str = " ".join([shlex.quote(a) for a in args])
         cmd = f"{config.SPARK_SUBMIT_WRAPPER} {script_path} {args_str}"
-        return self.run(host, cmd)
+        return self.run(host, cmd, quiet=quiet)
 
 
 # Singleton instance

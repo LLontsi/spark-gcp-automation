@@ -118,10 +118,10 @@ See `terraform/terraform.tfvars.secure.template` for complete configuration opti
 
 ### Interactive CLI (Recommended)
 
-The project includes a custom CLI for simplified cluster management:
+The project includes a powerful CLI for simplified cluster management:
 
 ```bash
-./manage.py
+python3 run_cli.py
 ```
 
 #### Available Commands
@@ -132,20 +132,66 @@ The project includes a custom CLI for simplified cluster management:
 | `status` | Display cluster status and architecture |
 | `scale N` | Scale cluster to N workers |
 | `ssh <target>` | SSH into master, edge, or worker nodes |
-| `run [options] [file]` | Execute Spark job |
-| `run -u <file>` | Upload local file and execute |
+| `run [file] [args]` | Execute Spark job (auto-uploads script) |
+| `upload <file>` | Upload file to HDFS |
+| `download <path>` | Download results from HDFS |
+| `hdfs [command]` | Interactive HDFS shell or execute single command |
+| `results [limit]` | Show recent job results |
 | `logs` | Tail deployment logs |
+| `set verbose on\|off` | Control output verbosity |
 | `destroy` | Tear down infrastructure |
+
+#### Verbosity Control
+
+Control CLI output verbosity for cleaner logs:
+
+```bash
+(spark-cluster) set verbose off     # Quiet mode: only results and errors
+(spark-cluster) set verbose on      # Verbose mode: show all logs (default)
+(spark-cluster) set                  # View current settings
+```
+
+**Quiet mode suppresses:**
+- SSH connection warnings
+- Spark INFO/WARN logs (shows only errors + results)
+- HDFS command noise
+- Intermediate progress messages
+
+**Use cases:**
+- Verbose ON: Debugging, learning, troubleshooting
+- Verbose OFF: Clean output, production use, scripts
 
 #### Example Workflow
 
 ```bash
+# Deploy cluster
 (spark-cluster) deploy -w 2          # Deploy with 2 workers
 (spark-cluster) status                # Verify deployment
-(spark-cluster) run                   # Run default WordCount test
-(spark-cluster) run -u mydata.txt     # Upload and process custom file
-(spark-cluster) ssh master            # Access master node
-(spark-cluster) destroy               # Clean up resources
+
+# Upload data and run job
+(spark-cluster) upload mydata.csv
+(spark-cluster) run myscript.py /user/spark/data/uploads/mydata.csv
+
+# Interactive HDFS shell
+(spark-cluster) hdfs
+[hdfs-shell]$ ls /user/spark/
+[hdfs-shell]$ cat /user/spark/results/part-00000
+[hdfs-shell]$ exit
+
+# Download results
+(spark-cluster) results               # List recent jobs
+(spark-cluster) download /user/spark/results/job-xyz
+
+# Use quiet mode for clean output
+(spark-cluster) set verbose off
+(spark-cluster) run pi 10000          # Only shows result, no Spark logs
+
+# Access nodes
+(spark-cluster) ssh master            # SSH to master
+(spark-cluster) ssh edge              # SSH to edge node
+
+# Clean up
+(spark-cluster) destroy               # Tear down cluster
 ```
 
 ### Manual Deployment
