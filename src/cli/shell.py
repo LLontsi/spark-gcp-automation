@@ -8,6 +8,12 @@ import time
 import shlex
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Refactored utilities
+from src.config import config
+from src.utils.ssh import ssh
+from src.utils.inventory import inventory
+
+
 class SparkClusterCLI(cmd.Cmd):
     intro = r"""
    _____                  __      __  ___            _ __
@@ -71,51 +77,60 @@ Type 'help <command>' for specific command usage.
         """Clear the terminal."""
         os.system('clear')
 
-    def _load_inventory(self, force_reload=False):
-        """Load and cache inventory file."""
-        if force_reload or not self._inventory_cache or (time.time() - self._cache_time) > 60:
-            try:
-                with open(self.inventory_file) as f:
-                    self._inventory_cache = yaml.safe_load(f)
-                    self._cache_time = time.time()
-            except Exception:
-                self._inventory_cache = None
-        return self._inventory_cache
-    
-    def _get_inventory_group(self, data, group_name):
-        """Navigate nested inventory structure to find group.
-        
-        Args:
-            data: Parsed inventory YAML
-            group_name: Group to find (master/workers/edge)
-            
-        Returns:
-            Group dict or None if not found
-        """
-        if not data or 'all' not in data:
-            return None
-        # Try direct children of all
-        if group_name in data['all'].get('children', {}):
-            return data['all']['children'][group_name]
-        # Try inside spark_cluster
-        if 'spark_cluster' in data['all'].get('children', {}):
-            return data['all']['children']['spark_cluster']['children'].get(group_name)
-        return None
+
 
     def do_deploy(self, arg):
         """
-        Deploy and configure the cluster.
+        Deploy a new Spark cluster on GCP or update existing configuration.
+        
+        WHAT IT DOES:
+        This is a comprehensive deployment that sets up your entire cluster in 3 phases:
+        
+        Phase 1 - Infrastructure (Terraform):
+        - Provisions GCP VMs (master, workers, edge node)
+        - Configures VPC networking and internal IPs
+        - Sets up firewall rules for Spark, HDFS, and UIs
+        - Manages SSH keys and access
+        
+        Phase 2 - Software Installation (Ansible):
+        - Installs Java 11 (OpenJDK)
+        - Installs Apache Spark 3.5.0
+        - Installs Apache Hadoop 3.3.6 (for HDFS)
+        - Configures HDFS with NameNode and DataNodes
+        - Sets up Spark Master and Workers
+        - Installs monitoring stack (Prometheus + Grafana)
+        
+        Phase 3 - Initialization:
+        - Formats HDFS namespace (first-time only)
+        - Starts all Spark and HDFS services
+        - Uploads sample data for testing
+        - Creates default HDFS directories
+        - Verifies cluster health
         
         Usage: deploy [options]
         
         Options:
-        -b, --background       Run deployment in the background and log to 'deploy.log'.
-        -w, --workers <num>    Number of worker nodes to deploy (default: 2, max: N).
+        -w, --workers <N>     Number of workers (default: 2, max: 3)
+        -b, --background      Run deployment in background (logs to deploy.log)
         
-        Steps:
-        1. Runs 'terraform apply' to provision VMs.
-        2. Runs 'update_inventory.sh' to generate Ansible hosts.
-        3. Runs 'ansible-playbook' to configure the cluster.
+        Examples:
+        - deploy                    # Interactive: 2 workers (shows output)
+        - deploy -w 3               # Interactive: 3 workers
+        - deploy -w 3 -b            # Background: 3 workers (check with 'logs')
+        
+        Time: ~8-10 minutes for complete deployment
+        
+        Updates: Running 'deploy' on existing cluster:
+        - Updates worker count (scales up/down)
+        - Reapplies Ansible configuration
+        - Does NOT destroy data in HDFS
+        
+        After Deployment:
+        - Master UI: http://MASTER_IP:8080
+        - HDFS UI: http://MASTER_IP:9870
+        - Grafana: http://MASTER_IP:3000
+        
+        Note: First deployment takes longer due to downloads and HDFS format.
         """
         args = shlex.split(arg)
         is_background = '-b' in args or '--background' in args
@@ -258,7 +273,24 @@ Type 'help <command>' for specific command usage.
                 os._exit(0)
 
     def do_logs(self, arg):
-        """Follow the deployment logs (Ctrl+C to stop)."""
+        """
+        Follow deployment logs in real-time.
+        
+        WHAT IT DOES:
+        Shows live output from background deployment process.
+        Uses 'tail -f' to stream logs as they're written.
+        
+        Usage: logs
+        
+        When to Use:
+        - After running 'deploy -b' (background deployment)
+        - To monitor long-running deployment progress
+        - To debug deployment failures
+        
+        Press Ctrl+C to stop following (deployment continues).
+        
+        Tip: Logs are saved to 'deploy.log' in the current directory.
+        """
         if not os.path.exists('deploy.log'):
             print("\t[WARN] No log file found.")
             return
@@ -273,11 +305,38 @@ Type 'help <command>' for specific command usage.
         """
         Scale the cluster to a specific number of workers.
         
-        Usage: scale <num>
+        WHAT IT DOES:
+        1. Validates target worker count (1-3)
+        2. Checks current cluster size
+        3. Adds or removes worker VMs via Terraform
+        4. Reconfigures Spark and HDFS via Ansible
+        5. Verifies new worker count
         
-        Example:
-        - scale 3   (Scale up to 3 workers)
-        - scale 1   (Scale down to 1 worker)
+        Usage: scale <N>
+        
+        Where N is the target number of workers (1-3).
+        
+        Examples:
+        - scale 3
+          Current: 2 workers → Target: 3 workers
+          Action: Adds 1 worker, reconfigures cluster
+          
+        - scale 1
+          Current: 2 workers → Target: 1 worker
+          Action: Removes 1 worker, rebalances HDFS
+        
+        Smart Behavior:
+        - Shows current → target transition
+        - Skips if already at target size
+        - Validates target is within limits (1-3)
+        - Verifies new count after scaling
+        
+        Important:
+        - HDFS data is preserved during scaling
+        - Rebalancing happens automatically
+        - Running jobs are NOT interrupted (graceful)
+        
+        This is a user-friendly wrapper around 'deploy -w <N>'.
         """
         args = shlex.split(arg)
         if not args:
@@ -335,26 +394,35 @@ Type 'help <command>' for specific command usage.
 
     def _get_current_worker_count(self):
         """Helper to count workers in inventory."""
-        if not os.path.exists(self.inventory_file):
-            return None
-        try:
-            data = self._load_inventory()
-            if not data:
-                return None
-            workers_group = self._get_inventory_group(data, 'workers')
-            if not workers_group or 'hosts' not in workers_group:
-                return None
-            return len(workers_group['hosts'])
-        except Exception:
-            return None
+        return inventory.count_workers()
 
     def do_destroy(self, arg):
         """
         Destroy the cluster infrastructure.
         
+        WHAT IT DOES:
+        1. Prompts for confirmation (safety check)
+        2. Runs 'terraform destroy' to delete all GCP resources:
+           - All VMs (master, workers, edge)
+           - VPC network and subnets
+           - Firewall rules
+           - SSH keys and metadata
+        3. Removes local inventory file
+        
         Usage: destroy
         
-        Warning: This will permanently delete all GCP resources (VMs, Network, Firewall).
+        WARNING:
+        - This is IRREVERSIBLE
+        - All data in HDFS will be PERMANENTLY DELETED
+        - All running Spark jobs will be TERMINATED
+        - All monitoring data will be LOST
+        
+        What is Preserved:
+        - Downloaded results (if you used 'download')
+        - Local scripts and data files
+        - Terraform state (for audit trail)
+        
+        Type 'y' to confirm destruction, any other key to cancel.
         """
         confirm = input("\t[WARN] Are you sure you want to DESTROY the cluster? (y/N): ")
         if confirm.lower() == 'y':
@@ -372,21 +440,37 @@ Type 'help <command>' for specific command usage.
 
     def do_ssh(self, arg):
         """
-        SSH into a specific node.
+        SSH into a specific cluster node for direct access.
+        
+        WHAT IT DOES:
+        Opens an interactive SSH session to the specified node.
+        Useful for debugging, checking logs, or manual operations.
         
         Usage: ssh [target]
         
-        Parameters:
-        - target: 'master', 'edge', 'worker-1', 'worker-2', etc. (Default: master)
+        Available Targets:
+        - master: Spark Master + HDFS NameNode + Monitoring
+        - edge: Job submission node
+        - worker-1, worker-2, worker-3: Spark Workers + HDFS DataNodes
         
-        Example:
-        - ssh edge
-        - ssh worker-1
+        Default: master (if no target specified)
+        
+        Examples:
+        - ssh                # Connect to master node
+        - ssh edge           # Connect to edge node
+        - ssh worker-1       # Connect to first worker
+        - ssh worker-2       # Connect to second worker
+        
+        Tips:
+        - Check Spark logs: /opt/spark/current/logs/
+        - Check HDFS logs: /opt/hadoop/current/logs/
+        - Verify services: systemctl status spark-worker
+        - View HDFS data: /opt/hadoop/current/bin/hdfs dfs -ls /
         """
         args = shlex.split(arg)
         target = args[0] if args else 'master'
         
-        ip = self._get_ip(target)
+        ip = inventory.get_ip(target)
         if ip:
             print(f"\t[INFO] Connecting to {target} ({ip})...")
             subprocess.run(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{ip}", shell=True)
@@ -394,7 +478,40 @@ Type 'help <command>' for specific command usage.
             print(f"\t[FAIL] Unknown host: {target}")
 
     def do_status(self, arg):
-        """Show cluster status and architecture."""
+        """
+        Display comprehensive cluster status and architecture.
+        
+        WHAT IT SHOWS:
+        1. Cluster Architecture:
+           - Visual diagram of nodes (master, edge, workers)
+           - IP addresses for each node
+           - Role descriptions
+           
+        2. Available Services:
+           - Spark Master UI (port 8080)
+           - HDFS NameNode UI (port 9870)
+           - Grafana Dashboard (port 3000)
+           - Prometheus Metrics (port 9090)
+           
+        3. Node Information:
+           - Current worker count
+           - Internal vs External IPs
+           - Service assignments
+        
+        Usage: status
+        
+        Requires: Active cluster (run 'deploy' first)
+        
+        Example Output:
+        ╔════════════════════════════════╗
+        ║    SPARK CLUSTER STATUS        ║
+        ╚════════════════════════════════╝
+        
+        [Architecture Diagram]
+        Master: 35.x.x.x
+        Workers: 2 nodes
+        Services: All running
+        """
         if not os.path.exists(self.inventory_file):
             print("\n\t[WARN] Inventory file not found.")
             print("\t       The cluster does not appear to be deployed.")
@@ -402,20 +519,23 @@ Type 'help <command>' for specific command usage.
             return
 
         try:
-            data = self._load_inventory()
+            # Use inventory manager to get IPs
+            master_ip = inventory.get_ip('master')
+            edge_ip = inventory.get_ip('edge')
+            worker_count = inventory.count_workers()
             
-            if not data or 'all' not in data:
-                 raise ValueError("Invalid inventory format")
-
-            master_group = self._get_inventory_group(data, 'master')
-            edge_group = self._get_inventory_group(data, 'edge')
-            workers_group = self._get_inventory_group(data, 'workers')
-
-            if not master_group or not edge_group or not workers_group:
-                raise ValueError("Could not find cluster groups in inventory")
-
-            master_ip = master_group['hosts']['spark-master']['ansible_host']
-            edge_ip = edge_group['hosts']['spark-edge']['ansible_host']
+            if not master_ip or not edge_ip:
+                raise ValueError("Could not find cluster IPs in inventory")
+            
+            # Get worker details from inventory
+            data = inventory.load()
+            if not data:
+                raise ValueError("Invalid inventory format")
+            
+            workers_group = inventory.get_group(data, 'workers')
+            if not workers_group or 'hosts' not in workers_group:
+                raise ValueError("Could not find workers in inventory")
+            
             workers = workers_group['hosts']
 
         except Exception as e:
@@ -429,10 +549,6 @@ Type 'help <command>' for specific command usage.
         print("\t║                     SPARK CLUSTER STATUS                           ║")
         print("\t╚════════════════════════════════════════════════════════════════════╝")
         print("\n")
-        
-        # print("\t┌─────────────────────────────────────────────────────────────────────┐")
-        # print("\t│                     CLUSTER ARCHITECTURE                            │")
-        # print("\t└─────────────────────────────────────────────────────────────────────┘")
         
         print("\n\t            [ Internet ]")
         print("\t                 │")
@@ -449,7 +565,6 @@ Type 'help <command>' for specific command usage.
         print(f"\t                                              ▼")
         
         # Worker nodes section
-        worker_count = len(workers)
         print(f"\t                       ╔═════════════════════════════════╗")
         print(f"\t                       ║   WORKER NODES ({worker_count})              ║")
         print(f"\t                       ╠═════════════════════════════════╣")
@@ -472,85 +587,54 @@ Type 'help <command>' for specific command usage.
         print("\t└─────────────────────────────────────────────────────────────────────┘")
         print("")
 
-    def _get_ip(self, host_alias):
-        if not os.path.exists(self.inventory_file):
-            return None
-        try:
-            data = self._load_inventory()
-            if not data: return None
-            
-            master_group = self._get_inventory_group(data, 'master')
-            edge_group = self._get_inventory_group(data, 'edge')
-            workers_group = self._get_inventory_group(data, 'workers')
 
-            if not master_group or not edge_group or not workers_group:
-                return None
 
-            if host_alias == 'master':
-                return master_group['hosts']['spark-master']['ansible_host']
-            elif host_alias == 'edge':
-                return edge_group['hosts']['spark-edge']['ansible_host']
-            elif host_alias == 'worker-1':
-                 return workers_group['hosts']['spark-worker-1']['ansible_host']
-            elif 'worker' in host_alias:
-                 # Check specific match
-                 if host_alias in workers_group['hosts']:
-                     return workers_group['hosts'][host_alias]['ansible_host']
-                 # Partial match
-                 for w in workers_group['hosts']:
-                     if host_alias in w:
-                          return workers_group['hosts'][w]['ansible_host']
-        except Exception:
-            return None
-        return None
 
-    def _get_internal_ip(self, host_alias):
-        """Get internal IP for VPC communication (HDFS, Spark, etc)."""
-        if not os.path.exists(self.inventory_file):
-            return None
-        try:
-            data = self._load_inventory()
-            if not data: return None
-            
-            master_group = self._get_inventory_group(data, 'master')
-            edge_group = self._get_inventory_group(data, 'edge')
-            workers_group = self._get_inventory_group(data, 'workers')
-
-            if not master_group or not edge_group or not workers_group:
-                return None
-
-            if host_alias == 'master':
-                return master_group['hosts']['spark-master'].get('internal_ip')
-            elif host_alias == 'edge':
-                return edge_group['hosts']['spark-edge'].get('internal_ip')
-            elif host_alias == 'worker-1':
-                 return workers_group['hosts']['spark-worker-1'].get('internal_ip')
-            elif 'worker' in host_alias:
-                 if host_alias in workers_group['hosts']:
-                     return workers_group['hosts'][host_alias].get('internal_ip')
-                 for w in workers_group['hosts']:
-                     if host_alias in w:
-                          return workers_group['hosts'][w].get('internal_ip')
-        except Exception:
-            return None
-        return None
 
     def do_run(self, arg):
         """
         Run a Spark job on the cluster.
         
+        WHAT IT DOES:
+        1. Automatically uploads your script to the edge node
+        2. Submits the job via spark-submit
+        3. Streams output back to your terminal
+        4. Cleans up the uploaded script when done
+        
+        IMPORTANT: This command does NOT upload data files. Use 'upload' first.
+        
         Usage: run [TARGET] [ARGUMENTS...]
         
-        Examples:
-        - run                                    # Show examples menu
-        - run wordcount                          # Built-in WordCount example
-        - run pi 1000                            # Calculate Pi with 1000 iterations
-        - run code.py                            # Run script (no arguments)
-        - run code.py arg1 arg2                  # Run script with arguments
-        - run code.py /user/spark/data/file.csv  # Pass HDFS path as argument
-        - run wrapper.sh --arg1 v1 --arg2 v2     # Execute custom wrapper script
+        Built-in Examples:
+        - run                                    # Show interactive examples menu
+        - run wordcount                          # Classic WordCount on sample data
+        - run pi 1000                            # Monte Carlo Pi (1000 iterations)
+        - run examples                           # Show examples menu
         
-        Note: Use 'upload' command to upload data files to HDFS first.
+        Custom Scripts:
+        - run code.py                            # Run script with no arguments
+        - run code.py arg1 arg2                  # Pass arguments to your script
+        - run code.py /user/spark/data/file.csv  # Use HDFS path as argument
+        - run wrapper.sh --config production     # Execute custom Spark wrapper
+        
+        Workflow Example:
+        ```
+        # 1. Upload data to HDFS (one-time)
+        upload data.csv
+        
+        # 2. Run your script (pass HDFS path as argument)
+        run analyze.py /user/spark/data/uploads/data.csv --verbose
+        
+        # 3. Script gets executed on cluster with those arguments:
+        #    sys.argv[1] = "/user/spark/data/uploads/data.csv"
+        #    sys.argv[2] = "--verbose"
+        ```
+        
+        File Types:
+        - .py files: Submitted via spark-submit (PySpark applications)
+        - .sh files: Executed directly (custom Spark wrappers with configs)
+        
+        Note: Data files must be uploaded separately. Use 'upload' command first.
         """
         args = shlex.split(arg)
         
@@ -617,19 +701,18 @@ Type 'help <command>' for specific command usage.
 
     def _run_pi_example(self, iterations):
         """Run Monte Carlo Pi estimation example."""
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Edge node IP not found.")
             return
         
-        master_internal_ip = self._get_internal_ip('master')
+        master_internal_ip = inventory.get_internal_ip('master')
         if not master_internal_ip:
             print("\t[FAIL] Could not determine master internal IP.")
             return
         
-        # Create Pi estimation script inline
-        pi_script = f'''
-from pyspark.sql import SparkSession
+        # Create Pi estimation script content
+        pi_script = f'''from pyspark.sql import SparkSession
 import sys
 import random
 
@@ -651,36 +734,44 @@ print(f"Error: {{abs(pi_estimate - 3.14159265359):.6f}}\\n")
 spark.stop()
 '''
         
-        # Write script to remote
-        cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'cat > /tmp/pi_example.py << \"EOFSCRIPT\"\n{pi_script}\nEOFSCRIPT'"
-        subprocess.call(cmd, shell=True)
+        # Write script locally first
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(pi_script)
+            local_script = f.name
         
-        # Run it
-        run_cmd = f"/home/ansible/spark-jobs/submit_job.sh /tmp/pi_example.py {iterations}"
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{run_cmd}'", shell=True)
+        try:
+            # Upload to edge node
+            remote_path = "/tmp/pi_example.py"
+            ssh.upload(local_script, remote_path, edge_ip, quiet=True)
+            
+            # Run it
+            ssh.submit_spark_job(edge_ip, remote_path, [iterations])
+        finally:
+            # Clean up local temp file
+            import os
+            os.unlink(local_script)
 
     def _run_wrapper_script(self, script_path, remaining_args):
         """Upload and execute a custom .sh wrapper script."""
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Edge node IP not found.")
             return
         
         print(f"\t[INFO] Uploading wrapper script '{os.path.basename(script_path)}'...")
         script_name = os.path.basename(script_path)
-        remote_path = f"/home/ansible/spark-jobs/user-scripts/{script_name}"
+        remote_path = f"{config.REMOTE_SCRIPT_DIR}/{script_name}"
         
-        # Upload
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p /home/ansible/spark-jobs/user-scripts'", shell=True, stdout=subprocess.DEVNULL)
-        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_path}", shell=True)
-        
-        # Make executable
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'chmod +x {remote_path}'", shell=True, stdout=subprocess.DEVNULL)
+        # Create directory and upload script
+        ssh.mkdir(edge_ip, config.REMOTE_SCRIPT_DIR)
+        ssh.upload(script_path, remote_path, edge_ip, quiet=True)
+        ssh.chmod(edge_ip, remote_path, "+x")
         
         # Execute with all arguments
         print(f"\t[INFO] Executing wrapper script...")
         args_str = " ".join([shlex.quote(a) for a in remaining_args])
-        ret = subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{remote_path} {args_str}'", shell=True)
+        ret = ssh.run(edge_ip, f"{remote_path} {args_str}")
         
         if ret != 0:
             print(f"\t[FAIL] Wrapper script failed (Exit Code: {ret}).")
@@ -692,7 +783,7 @@ spark.stop()
         Uploads the script and passes all arguments directly to it.
         No auto-upload, no smart detection - user controls everything.
         """
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Edge node IP not found.")
             return
@@ -700,48 +791,62 @@ spark.stop()
         # Upload script
         print(f"\t[INFO] Uploading script '{os.path.basename(script_path)}'...")
         script_name = os.path.basename(script_path)
-        remote_script_dir = "spark-jobs/user-scripts"
-        remote_script_path = f"{remote_script_dir}/{script_name}"
+        remote_script_path = f"{config.REMOTE_SCRIPT_DIR}/{script_name}"
         
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'mkdir -p {remote_script_dir}'", shell=True, stdout=subprocess.DEVNULL)
-        subprocess.call(f"scp -q -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} {script_path} ansible@{edge_ip}:{remote_script_path}", shell=True)
-        
-        # Pass all arguments directly to script (no processing)
-        args_str = " ".join([shlex.quote(a) for a in remaining_args])
+        ssh.mkdir(edge_ip, config.REMOTE_SCRIPT_DIR)
+        ssh.upload(script_path, remote_script_path, edge_ip, quiet=True)
         
         # Submit job
         print(f"\t[INFO] Submitting job...")
-        submit_wrapper = "/home/ansible/spark-jobs/submit_job.sh"
-        cmd = f"ssh -o StrictHostKeyChecking=no -i {self.SSH_KEY_PATH} ansible@{edge_ip} '{submit_wrapper} {remote_script_path} {args_str}'"
+        ret = ssh.submit_spark_job(edge_ip, remote_script_path, remaining_args)
         
-        ret = subprocess.call(cmd, shell=True)
         if ret != 0:
             print(f"\t[FAIL] Job submission failed (Exit Code: {ret}).")
 
     def _run_default_wordcount(self):
         """Helper to run the default wordcount test (legacy behavior)."""
-        edge_ip = self._get_ip('edge')
-        if not edge_ip: return
+        edge_ip = inventory.get_ip('edge')
+        if not edge_ip:
+            return
         
         # Use default HDFS sample with INTERNAL IP
-        master_internal_ip = self._get_internal_ip('master')
+        master_internal_ip = inventory.get_internal_ip('master')
         if not master_internal_ip:
             print("\t[FAIL] Could not determine master internal IP.")
             return
-        target_path = f"hdfs://{master_internal_ip}:9000/user/spark/data/sample.txt"
         
+        target_path = f"{config.get_hdfs_url(master_internal_ip)}/user/spark/data/sample.txt"
         run_cmd = f"/home/ansible/spark-jobs/run_wordcount.sh '{target_path}'"
-        subprocess.call(f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {self.SSH_KEY_PATH} ansible@{edge_ip} \"{run_cmd}\"", shell=True)
+        ssh.run(edge_ip, run_cmd)
 
     def do_upload(self, arg):
         """
         Upload a local file to HDFS.
         
+        WHAT IT DOES:
+        1. Copies your local file to the edge node via SCP
+        2. Puts the file into HDFS from the edge node
+        3. Cleans up the temporary file on edge node
+        4. File is now permanently stored in HDFS
+        
         Usage: upload <local_file> [hdfs_path]
         
         Examples:
-        - upload data.csv                          (uploads to /user/spark/data/uploads/)
-        - upload data.csv /user/spark/custom/      (uploads to custom HDFS path)
+        - upload data.csv
+          Uploads to: /user/spark/data/uploads/data.csv
+          
+        - upload report.txt /user/spark/reports/
+          Uploads to: /user/spark/reports/report.txt
+          
+        - upload large_dataset.parquet /user/spark/data/processed/
+          Uploads to: /user/spark/data/processed/large_dataset.parquet
+        
+        After Upload:
+        - File persists in HDFS across all cluster nodes
+        - Can be used by multiple Spark jobs
+        - Access via: hdfs://master-ip:9000/user/spark/data/uploads/filename
+        
+        Tip: Upload data files once, use many times!
         """
         args = shlex.split(arg)
         if not args:
@@ -755,10 +860,10 @@ spark.stop()
             return
         
         # Default HDFS upload path
-        hdfs_path = args[1] if len(args) > 1 else "/user/spark/data/uploads/"
+        hdfs_path = args[1] if len(args) > 1 else config.HDFS_UPLOADS_DIR + "/"
         filename = os.path.basename(local_file)
         
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Could not find edge node IP.")
             return
@@ -766,38 +871,43 @@ spark.stop()
         print(f"\t[INFO] Uploading {local_file} to HDFS...")
         print(f"\t       Target: {hdfs_path}")
         
-        # Step 1: SCP file to edge node
-        tmp_path = f"/tmp/{filename}"
-        scp_cmd = f"scp -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no {local_file} ansible@{edge_ip}:{tmp_path}"
+        # Upload to HDFS (handles SCP + put + cleanup automatically)
+        ret = ssh.upload_to_hdfs(local_file, hdfs_path, edge_ip)
         
-        ret = subprocess.call(scp_cmd, shell=True)
         if ret != 0:
-            print(f"\t[FAIL] Failed to upload file to edge node.")
+            print(f"\t[FAIL] Failed to upload file to HDFS.")
             return
-        
-        # Step 2: Put file into HDFS from edge node
-        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs -put -f {tmp_path} {hdfs_path}'"
-        
-        ret = subprocess.call(hdfs_cmd, shell=True)
-        if ret != 0:
-            print(f"\t[FAIL] Failed to put file into HDFS.")
-            return
-        
-        # Step 3: Clean up tmp file
-        cleanup_cmd = f"ssh -i {self.SSH_KEY_PATH} -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ansible@{edge_ip} 'rm -f {tmp_path}'"
-        subprocess.call(cleanup_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         print(f"\t[SUCCESS] File uploaded to HDFS: {hdfs_path}{filename}")
 
     def do_download(self, arg):
         """
-        Download a file/directory from HDFS to local machine.
+        Download Spark job results from HDFS to your local machine.
         
-        Usage: download <hdfs_path> [local_path]
+        WHAT IT DOES:
+        1. Retrieves files from HDFS directory via edge node
+        2. Transfers to local directory using SCP
+        3. Preserves directory structure
+        4. Cleans up temporary files on edge node
+        
+        Usage: download <hdfs_directory> [local_directory]
         
         Examples:
-        - download /user/spark/results/job-123             (downloads to ./results/)
-        - download /user/spark/results/job-123 ./my-data/  (downloads to custom local path)
+        - download /user/spark/results/wordcount-20240115
+          Downloads to: ./results/wordcount-20240115/
+          
+        - download /user/spark/results/my_job ./output/
+          Downloads to: ./output/my_job/
+          
+        - download /user/spark/data/processed /tmp/data/
+          Downloads to: /tmp/data/processed/
+        
+        Output Files:
+        - Spark saves results as multiple part-xxxxx files
+        - All parts are downloaded to preserve data
+        - Use 'cat part-*' to merge if needed
+        
+        Tip: Local directory is created if it doesn't exist.
         """
         args = shlex.split(arg)
         if not args:
@@ -811,7 +921,7 @@ spark.stop()
         # Create local directory if it doesn't exist
         os.makedirs(local_path, exist_ok=True)
         
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Could not find edge node IP.")
             return
@@ -847,13 +957,52 @@ spark.stop()
 
     def do_hdfs(self, arg):
         """
-        HDFS Management Shell.
+        HDFS Management Shell - Interact with the HDFS filesystem.
         
-        Usage: 
-        - hdfs              (Enter interactive HDFS shell with aliases like ls, put, get)
-        - hdfs <command>    (Execute single HDFS command, e.g., hdfs ls /)
+        WHAT IT DOES:
+        Provides direct access to HDFS commands without typing full paths.
+        
+        Interactive Mode (no arguments):
+        - Starts a bash shell on edge node with HDFS aliases
+        - Pre-configured shortcuts: ls, put, get, rm, cat, mkdir, du, df
+        - Custom prompt shows [hdfs-shell]
+        - Type 'exit' or Ctrl+D to quit
+        
+        Single Command Mode:
+        - Executes one HDFS command and returns
+        - Auto-adds 'dfs' prefix if you forget it
+        - Example: 'hdfs ls /' is auto-converted to 'hdfs dfs -ls /'
+        
+        Usage:
+        - hdfs                    # Interactive shell
+        - hdfs <command>          # Single command
+        
+        Interactive Examples:
+        ```
+        hdfs
+        [hdfs-shell]$ ls /user/spark/data
+        [hdfs-shell]$ put local.txt /user/spark/
+        [hdfs-shell]$ cat /user/spark/results/part-00000
+        [hdfs-shell]$ du /user/spark/
+        [hdfs-shell]$ exit
+        ```
+        
+        Single Command Examples:
+        - hdfs ls /user/spark/data/uploads
+        - hdfs cat /user/spark/results/wordcount/part-00000
+        - hdfs du -h /user/spark/
+        - hdfs df -h
+        - hdfs rm -r /user/spark/temp/
+        
+        Available Aliases (interactive mode):
+        - ls, put, get, rm, cat: File operations
+        - mkdir, mv, cp: Directory operations  
+        - du, df: Disk usage
+        - chmod, chown: Permissions
+        
+        Tip: Use interactive mode for multiple operations, single mode for quick checks.
         """
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Could not find edge node IP.")
             return
@@ -864,10 +1013,9 @@ spark.stop()
             print("\t       Aliases: ls, put, get, rm, cat, mkdir, du, df")
             print("\t       Type 'exit' or Ctrl+D to quit.")
             
-            # Create remote .hdfs_rc file
-            # WE USE ABSOLUTE PATHS because non-login shells might not have HADOOP_HOME in PATH
-            rc_content = r"""
-HDFS_BIN=/opt/hadoop/current/bin/hdfs
+            # Create remote .hdfs_rc file with absolute paths
+            rc_content = rf"""
+HDFS_BIN={config.HADOOP_BIN}
 alias ls='$HDFS_BIN dfs -ls'
 alias put='$HDFS_BIN dfs -put'
 alias get='$HDFS_BIN dfs -get'
@@ -887,15 +1035,15 @@ export PS1="\[\033[01;32m\][hdfs-shell]\[\033[00m\] \u@\h:\w$ "
                 with open("hdfs_rc.tmp", "w") as f:
                     f.write(rc_content)
                 
-                # Check for existing ControlMaster socket or just run fast SCP
-                # We use -C (compression) and standard options
-                ssh_opts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPersist=600s -o ControlPath=~/.ssh/ansible-%r@%h:%p"
+                # SSH ControlMaster for faster connections
+                ssh_opts = f"{config.SSH_OPTS} -o ControlMaster=auto -o ControlPersist=600s -o ControlPath=~/.ssh/ansible-%r@%h:%p"
                 
-                subprocess.call(f"scp -q {ssh_opts} -i {self.SSH_KEY_PATH} hdfs_rc.tmp ansible@{edge_ip}:.hdfs_rc", shell=True)
+                # Upload RC file
+                subprocess.call(f"scp -q {ssh_opts} -i {config.SSH_KEY_PATH} hdfs_rc.tmp {config.SSH_USER}@{edge_ip}:.hdfs_rc", shell=True)
                 os.remove("hdfs_rc.tmp")
                 
                 # SSH with RC file
-                subprocess.call(f"ssh -t {ssh_opts} -i {self.SSH_KEY_PATH} ansible@{edge_ip} 'bash --rcfile .hdfs_rc'", shell=True)
+                subprocess.call(f"ssh -t {ssh_opts} -i {config.SSH_KEY_PATH} {config.SSH_USER}@{edge_ip} 'bash --rcfile .hdfs_rc'", shell=True)
                 
             except Exception as e:
                 print(f"\t[FAIL] Error starting shell: {e}")
@@ -913,26 +1061,40 @@ export PS1="\[\033[01;32m\][hdfs-shell]\[\033[00m\] \u@\h:\w$ "
             
         print(f"\t[EXEC] hdfs dfs {arg}")
         
-        # Enable ControlMaster for speedier repeated commands
-        ssh_opts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ControlMaster=auto -o ControlPersist=600s -o ControlPath=~/.ssh/ansible-%r@%h:%p"
-        
-        hdfs_cmd = f"ssh -i {self.SSH_KEY_PATH} {ssh_opts} ansible@{edge_ip} '/opt/hadoop/current/bin/hdfs dfs {arg}'"
-        subprocess.call(hdfs_cmd, shell=True)
+        # Execute HDFS command
+        ssh.run(edge_ip, f"{config.HADOOP_BIN} dfs {arg}")
 
     def do_results(self, arg):
         """
         List Spark job results stored in HDFS.
         
+        WHAT IT DOES:
+        Lists contents of the HDFS results directory showing
+        output directories from completed Spark jobs.
+        
         Usage: results [limit]
         
+        Parameters:
+        - limit: Number of recent results to show (default: 10)
+        
         Examples:
-        - results       (show last 10 jobs)
-        - results 20    (show last 20 jobs)
+        - results       # Show last 10 job results
+        - results 20    # Show last 20 job results
+        - results 5     # Show last 5 job results
+        
+        Output:
+        Directories in /user/spark/results/ with timestamps.
+        Each contains part-xxxxx files from Spark.
+        
+        Next Steps:
+        - Use 'download' to get results locally
+        - Use 'hdfs cat' to view part files
+        - Use 'hdfs ls <path>' for details
         """
         args = shlex.split(arg)
         limit = int(args[0]) if args and args[0].isdigit() else 10
         
-        edge_ip = self._get_ip('edge')
+        edge_ip = inventory.get_ip('edge')
         if not edge_ip:
             print("\t[FAIL] Could not find edge node IP.")
             return
