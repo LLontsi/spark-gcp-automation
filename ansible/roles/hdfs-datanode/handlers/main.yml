@@ -1,0 +1,6 @@
+---
+- name: Restart HDFS DataNode
+  ansible.builtin.systemd:
+    name: hdfs-datanode
+    state: restarted
+  become: true

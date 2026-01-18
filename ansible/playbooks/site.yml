@@ -1,6 +1,15 @@
 ---
 # Main playbook to configure Spark cluster
 
+- name: Wait for SSH connection
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to be available
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 60
+
 - name: Load global variables
   hosts: all
   gather_facts: false
@@ -10,46 +19,78 @@
         file: "{{ playbook_dir }}/../group_vars/all.yml"
     - name: Include cluster vars
       ansible.builtin.include_vars:
-        file: "{{ playbook_dir }}/../group_vars/spark_cluster.yml"
+        file: "{{ playbook_dir }}/../group_vars/spark-cluster.yml"
 
 - name: Configure all nodes with common settings
   hosts: all
+  strategy: free  # Parallel execution for faster deployment
   become: true
-  gather_facts: true
+  gather_facts: true  # Required for ansible_os_family and other facts
   vars_files:
     - ../group_vars/all.yml
-    - ../group_vars/spark_cluster.yml
+    - ../group_vars/spark-cluster.yml
   roles:
     - common
+    - monitoring-common
     - java
     - spark-common
+    - hdfs-common
 
-- name: Configure Spark Master
+
+# Critical path: HDFS NameNode and Spark Master must complete before workers
+- name: Configure Spark Master (Critical Services)
+  hosts: master
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - spark-master
+    - hdfs-namenode
+
+# Non-blocking: Edge node and monitoring can run in parallel with workers
+- name: Configure Monitoring Stack (Non-blocking)
+  hosts: master
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - prometheus
+    - grafana
+
+- name: Configure Spark Edge node
+  hosts: edge
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - spark-edge
+
+- name: Configure Spark Workers
+  hosts: workers
+  strategy: free
+  become: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/spark-cluster.yml
+  roles:
+    - spark-worker
+    - hdfs-datanode
+
+
+- name: Setup HDFS directory structure
   hosts: master
   become: true
   vars_files:
     - ../group_vars/all.yml
-    - ../group_vars/spark_cluster.yml
+    - ../group_vars/spark-cluster.yml
   roles:
-    - spark-master
-
-- name: Configure Spark Workers
-  hosts: workers
-  become: true
-  vars_files:
-    - ../group_vars/all.yml
-    - ../group_vars/spark_cluster.yml
-  roles:
-    - spark-worker
-
-- name: Configure Spark Edge node
-  hosts: edge
-  become: true
-  vars_files:
-    - ../group_vars/all.yml
-    - ../group_vars/spark_cluster.yml
-  roles:
-    - spark-edge
+    - hdfs-setup
 
 - name: Display cluster summary
   hosts: localhost

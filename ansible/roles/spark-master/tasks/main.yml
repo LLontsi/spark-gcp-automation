@@ -51,6 +51,4 @@
 
 - name: Display Spark Master Web UI URL
   ansible.builtin.debug:
-    msg: >-
-      Master UI: http://{{ ansible_default_ipv4.address }}:{{
-      spark_master_webui_port }}
+    msg: "Spark Master Web UI: http://{{ ansible_default_ipv4.address }}:{{ spark_master_webui_port }}"

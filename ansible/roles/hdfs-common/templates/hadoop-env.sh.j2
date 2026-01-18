@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Java configuration
+export JAVA_HOME={{ java_home }}
+
+# Hadoop configuration
+export HADOOP_HOME=/opt/hadoop/current
+export HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
+export HADOOP_LOG_DIR=/var/log/hadoop
+export HADOOP_PID_DIR=/var/run/hadoop
+
+# HDFS configuration
+export HDFS_NAMENODE_USER=root
+export HDFS_DATANODE_USER=root
+export HDFS_SECONDARYNAMENODE_USER=root
+
+# Set heap sizes
+export HADOOP_HEAPSIZE_MAX=2048
+export HADOOP_NAMENODE_OPTS="-Xmx2g"
+export HADOOP_DATANODE_OPTS="-Xmx2g"

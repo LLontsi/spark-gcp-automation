@@ -1,0 +1,27 @@
+# Terraform Backend Configuration (Optional but Recommended for Production)
+#
+# This enables:
+# 1. Remote state storage in Google Cloud Storage
+# 2. State locking to prevent concurrent modifications
+# 3. Team collaboration with shared state
+#
+# To enable:
+# 1. Create a GCS bucket: gsutil mb gs://your-project-terraform-state
+# 2. Uncomment the terraform block below
+# 3. Replace 'your-project-terraform-state' with your bucket name
+# 4. Run: terraform init -migrate-state
+
+# terraform {
+#   backend "gcs" {
+#     bucket  = "your-project-terraform-state"
+#     prefix  = "spark-cluster/state"
+#   }
+# }
+
+# Benefits:
+# - Prevents "state file locked" errors during team deployments
+# - Automatic state backups and versioning
+# - Encrypted at rest in GCS
+# - No local terraform.tfstate file (safer for secrets)
+#
+# Learn more: https://www.terraform.io/docs/language/settings/backends/gcs.html

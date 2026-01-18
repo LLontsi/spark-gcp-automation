@@ -1,0 +1,18 @@
+[Unit]
+Description=HDFS NameNode
+After=network.target
+
+[Service]
+Type=forking
+User=root
+Group=root
+Environment="JAVA_HOME={{ java_home }}"
+Environment="HADOOP_HOME=/opt/hadoop/current"
+ExecStart=/opt/hadoop/current/bin/hdfs --daemon start namenode
+ExecStop=/opt/hadoop/current/bin/hdfs --daemon stop namenode
+Restart=on-failure
+RestartSec=10
+WorkingDirectory=/opt/hadoop/current
+
+[Install]
+WantedBy=multi-user.target

@@ -191,3 +191,48 @@ resource "google_compute_instance" "spark_edge" {
 
   allow_stopping_for_update = true
 }
+
+# HDFS NameNode persistent disk (for metadata)
+resource "google_compute_disk" "hdfs_namenode" {
+  name    = "${var.cluster_name}-hdfs-namenode-disk"
+  project = var.project_id
+  type    = "pd-ssd"
+  zone    = var.zone
+  size    = 20 # 20GB for HDFS metadata (reduced for GCP free tier)
+
+  labels = {
+    role    = "hdfs-namenode"
+    cluster = var.cluster_name
+  }
+}
+
+# Attach NameNode disk to master
+resource "google_compute_attached_disk" "namenode_attachment" {
+  disk     = google_compute_disk.hdfs_namenode.id
+  instance = google_compute_instance.spark_master.id
+}
+
+# HDFS DataNode persistent disks (one per worker)
+resource "google_compute_disk" "hdfs_datanode" {
+  count = var.num_workers
+
+  name    = "${var.cluster_name}-hdfs-datanode-${count.index + 1}-disk"
+  project = var.project_id
+  type    = "pd-ssd"
+  zone    = var.zone
+  size    = 40 # 40GB per worker (reduced for GCP free tier: 300GB limit)
+
+  labels = {
+    role    = "hdfs-datanode"
+    cluster = var.cluster_name
+    index   = tostring(count.index + 1)
+  }
+}
+
+# Attach DataNode disks to workers
+resource "google_compute_attached_disk" "datanode_attachment" {
+  count = var.num_workers
+
+  disk     = google_compute_disk.hdfs_datanode[count.index].id
+  instance = google_compute_instance.spark_workers[count.index].id
+}

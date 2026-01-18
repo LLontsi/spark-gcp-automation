@@ -7,23 +7,18 @@ locale: "en_US.UTF-8"
 
 # User Configuration
 ansible_user: ansible
-ansible_ssh_private_key_file: ~/.ssh/spark-cluster-key
+ansible_ssh_private_key_file: ~/.ssh/gcp_spark
 
 # Network Configuration
 spark_master_hostname: spark-master
-spark_master_ip: 10.0.0.10
+spark_master_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
 
 # Spark Configuration
 spark_version: "3.5.0"
 spark_hadoop_version: "3"
-spark_download_url: >-
-  https://archive.apache.org/dist/spark/spark-{{
-  spark_version }}/spark-{{ spark_version }}-bin-hadoop{{
-  spark_hadoop_version }}.tgz
+spark_download_url: "https://archive.apache.org/dist/spark/spark-{{ spark_version }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
 spark_install_dir: /opt/spark
-spark_home: >-
-  {{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{
-  spark_hadoop_version }}
+spark_home: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}"
 
 # Java Configuration
 java_version: "11"
@@ -35,8 +30,27 @@ spark_master_webui_port: 8080
 spark_worker_webui_port: 8081
 spark_history_server_port: 18080
 
-# Performance Tuning (adapté pour e2-standard-2: 2 CPUs, 8GB RAM)
-spark_worker_cores: 2
-spark_worker_memory: "6g"
-spark_executor_memory: "4g"
+# Hadoop/HDFS Configuration
+hadoop_version: "3.3.6"
+hadoop_download_url: "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
+hadoop_install_dir: /opt/hadoop
+hadoop_home: "{{ hadoop_install_dir }}/current"
+
+# HDFS Settings
+hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
+hdfs_replication_factor: 2
+hdfs_block_size: 134217728  # 128MB
+hdfs_datanode_data_dir: /data/hadoop/datanode
+hdfs_namenode_data_dir: /data/hadoop/namenode
+
+# HDFS Ports
+hdfs_namenode_port: 9000
+hdfs_namenode_http_port: 9870
+hdfs_datanode_port: 9866
+hdfs_datanode_http_port: 9864
+
+# Performance Tuning (n1-standard-4: 4 vCPU, 15GB RAM)
+spark_worker_cores: 4
+spark_worker_memory: "12g"
+spark_executor_memory: "10g"
 spark_driver_memory: "2g"

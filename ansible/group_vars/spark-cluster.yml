@@ -1,0 +1,25 @@
+---
+# Spark cluster specific configuration
+
+# Cluster Configuration
+spark_cluster_name: "spark-gcp-cluster"
+
+# Spark Environment
+spark_env_extras:
+  SPARK_MASTER_HOST: "{{ spark_master_ip }}"
+  SPARK_MASTER_PORT: "{{ spark_master_port }}"
+  SPARK_WORKER_CORES: "{{ spark_worker_cores }}"
+  SPARK_WORKER_MEMORY: "{{ spark_worker_memory }}"
+  SPARK_LOCAL_DIRS: "/tmp/spark"
+  SPARK_LOG_DIR: "{{ spark_home }}/logs"
+  SPARK_PID_DIR: "/var/run/spark"
+
+# Spark Defaults
+spark_defaults:
+  spark.master: "spark://{{ spark_master_ip }}:{{ spark_master_port }}"
+  spark.eventLog.enabled: "true"
+  spark.eventLog.dir: "/tmp/spark-events"
+  spark.history.fs.logDirectory: "/tmp/spark-events"
+  spark.serializer: "org.apache.spark.serializer.KryoSerializer"
+  spark.driver.memory: "{{ spark_driver_memory }}"
+  spark.executor.memory: "{{ spark_executor_memory }}"
