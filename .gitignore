@@ -9,30 +9,15 @@
 crash.log
 crash.*.log
 
-# Exclude all .tfvars files, which are likely to contain sensitive data, such as
-# password, private keys, and other secrets. These should not be part of version 
-# control as they are data points which are potentially sensitive and subject 
-# to change depending on the environment.
 *.tfvars
 *.tfvars.json
 
-# Ignore override files as they are usually used to override resources locally and so
-# are not checked in
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-
-# Ignore transient lock info files created by terraform apply
 .terraform.tfstate.lock.info
 
-# Include override files you do wish to add to version control using negated pattern
-# !example_override.tf
-
-# Include tfplan files to ignore the plan output of command: terraform plan -out=tfplan
-# example: *tfplan*
-
-# Ignore CLI configuration files
 .terraformrc
 terraform.rc
 
@@ -52,12 +37,15 @@ override.tf.json
 .vault_pass
 ansible.log
 *.vault
+ansible/inventory/hosts.yml
 
-# GCP Credentials - IMPORTANT!
-*.json
+# GCP Credentials 
 *service-account*.json
+*credentials*.json
 gcp-credentials.json
+application_default_credentials.json
 credentials/
+.gcp/
 
 # Python
 __pycache__/
@@ -78,23 +66,41 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-*.log
 
-# Secrets
+# Logs 
+*.log
+deploy.log
+ansible.log
+
+# Secrets & Keys
 .env
 .env.local
+.env.*.local
 *.pem
 *.key
+*.private
 secrets/
 private/
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+id_ecdsa
+id_ecdsa.pub
+gcp_spark
+gcp_spark.pub
+*.ppk
 
 # Backup files
 *.bak
 *.backup
 
-# PR description
+# Project-specific
 PR_DESCRIPTION.md
 .what_we_have_done.md
 .error.txt
-ansible/inventory/hosts.yml
-lonstie
+
+# Downloaded results 
+results/
+local-results/
