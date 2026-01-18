@@ -102,5 +102,5 @@ PR_DESCRIPTION.md
 .error.txt
 
 # Downloaded results 
-results/
+./results/*
 local-results/
