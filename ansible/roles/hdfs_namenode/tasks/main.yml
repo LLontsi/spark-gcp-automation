@@ -55,7 +55,7 @@
 
 - name: Wait for NameNode to be ready
   ansible.builtin.wait_for:
-    host: "{{ hdfs_namenode_ip }}" 
+    host: "{{ hdfs_namenode_ip }}"
     port: 9000
     delay: 5
     timeout: 60

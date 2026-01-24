@@ -8,7 +8,6 @@
     mode: '0755'
   become: true
 
-
 - name: Check if Hadoop is already downloaded
   ansible.builtin.stat:
     path: /opt/hadoop/hadoop-{{ hadoop_version }}.tar.gz
@@ -51,7 +50,6 @@
     creates: /opt/hadoop/hadoop-{{ hadoop_version }}
   become: true
   when: not hadoop_dir.stat.exists
-
 
 - name: Create Hadoop symlink
   ansible.builtin.file:

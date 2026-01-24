@@ -19,7 +19,7 @@
     mode: '0755'
 
 - name: Create Generic Spark Job Submission Script
-  become: yes
+  become: true
   ansible.builtin.copy:
     dest: /home/{{ ansible_user }}/spark-jobs/submit_job.sh
     mode: '0755'
@@ -28,9 +28,9 @@
     content: |
       #!/bin/bash
       set -e
-      
+
       # wrapper for generic spark submission with dynamic resource detection
-      
+
       if [ -z "$1" ]; then
         echo "Usage: submit_job.sh <script_path> [args...]"
         exit 1
@@ -39,13 +39,13 @@
       SCRIPT_PATH=$1
       shift
       SCRIPT_ARGS="$@"
-      
+
       MASTER_URL="spark://{{ spark_master_ip }}:{{ spark_master_port }}"
-      
+
       echo "Submitting Spark Job..."
       echo "Script: $SCRIPT_PATH"
       echo "Master: $MASTER_URL"
-      
+
       # --- Dynamic Resource Detection (Same as WordCount) ---
       set +e
       JSON_RESP=$(curl -s --connect-timeout 2 "http://{{ spark_master_ip }}:{{ spark_master_webui_port }}/json/")
@@ -63,7 +63,7 @@
               NUM_WORKERS=$(echo "$JSON_RESP" | grep -o '"state"\s*:\s*"ALIVE"' | wc -l)
           fi
       fi
-      
+
       if [ "$NUM_WORKERS" -eq 0 ] || [ "$TOTAL_CORES" -eq 0 ]; then
           echo "  [WARN] Using safe defaults: 2 workers, 4 cores, 12GB"
           NUM_WORKERS=2
@@ -82,7 +82,7 @@
 
       [ "$EXECUTOR_CORES" -lt 1 ] && EXECUTOR_CORES=1
       [ "$EXECUTOR_MEMORY" -lt 1 ] && EXECUTOR_MEMORY=1
-      
+
       echo "Configuration: ${NUM_EXECUTORS} executors, ${EXECUTOR_CORES} cores/exec, ${EXECUTOR_MEMORY}GB mem/exec"
 
       # --- Submission ---
@@ -204,7 +204,7 @@
               NUM_WORKERS=$(echo "$JSON_RESP" | grep -o '"state"\s*:\s*"ALIVE"' | wc -l)
           fi
       fi
-      
+
       # Fallback logic if detection failed
       if [ "$NUM_WORKERS" -eq 0 ] || [ "$TOTAL_CORES" -eq 0 ]; then
           echo "  [WARN] Failed to detect workers or resources"
@@ -217,7 +217,7 @@
       # Calculate executor settings based on detected resources
       # Strategy: 1 executor per worker, use 75% of available resources
       NUM_EXECUTORS=$NUM_WORKERS
-      
+
       if [ "$NUM_WORKERS" -gt 0 ]; then
           EXECUTOR_CORES=$((TOTAL_CORES * 75 / 100 / NUM_WORKERS))
           EXECUTOR_MEMORY=$((TOTAL_MEMORY * 75 / 100 / NUM_WORKERS))
