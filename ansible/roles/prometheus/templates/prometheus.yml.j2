@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+{% if groups['master'] is defined %}
+{% for host in groups['master'] %}
+      - targets: ['{{ hostvars[host]["internal_ip"] | default(hostvars[host]["ansible_host"]) }}:9100']
+        labels:
+          node_name: '{{ host }}'
+          node_role: 'master'
+{% endfor %}
+{% endif %}
+{% if groups['workers'] is defined %}
+{% for host in groups['workers'] %}
+      - targets: ['{{ hostvars[host]["internal_ip"] | default(hostvars[host]["ansible_host"]) }}:9100']
+        labels:
+          node_name: '{{ host }}'
+          node_role: 'worker'
+{% endfor %}
+{% endif %}
+{% if groups['edge'] is defined %}
+{% for host in groups['edge'] %}
+      - targets: ['{{ hostvars[host]["internal_ip"] | default(hostvars[host]["ansible_host"]) }}:9100']
+        labels:
+          node_name: '{{ host }}'
+          node_role: 'edge'
+{% endfor %}
+{% endif %}

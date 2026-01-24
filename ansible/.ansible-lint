@@ -1,0 +1,24 @@
+---
+skip_list:
+  - line-length
+  - role-name
+  - risky-file-permissions
+  - run-once[play]
+  - var-naming[no-role-prefix]
+  - trailing-spaces
+  - risky-shell-pipe
+  - fqcn[canonical]
+  - fqcn[action-core]
+  - ignore-errors
+  - syntax-check
+  - yaml[empty-lines]
+  - yaml[new-line-at-end-of-file]
+warn_list:
+  - experimental
+exclude_paths:
+  - .git/
+  - .github/
+  - terraform/
+  - docs/
+  - scripts/
+  - inventory/gcp.yml

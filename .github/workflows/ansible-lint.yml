@@ -16,28 +16,27 @@ jobs:
   ansible-lint:
     name: Ansible Lint
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        pip install ansible ansible-lint yamllint
+      - name: Install Ansible and lint tools
+        run: |
+          pip install ansible ansible-lint yamllint
 
-    - name: Run ansible-lint
-      working-directory: ./ansible
-      run: |
-        ansible-lint playbooks/ || true
-      continue-on-error: true
+      - name: Run ansible-lint
+        working-directory: ./ansible
+        run: |
+          ansible-lint playbooks/ roles/ || true
+        continue-on-error: true
 
-    - name: Run yamllint
-      working-directory: ./ansible
-      run: |
-        yamllint . || true
-      continue-on-error: true
+      - name: Run yamllint
+        working-directory: ./ansible
+        run: |
+          yamllint -f parsable . || true
+        continue-on-error: true

@@ -18,7 +18,7 @@ ansible/
 │   └── hosts.yml          # Inventory file
 └── group_vars/
     ├── all.yml            # Global variables
-    └── spark_cluster.yml  # Cluster-specific variables
+    └── spark-cluster.yml  # Cluster-specific variables
 ```
 
 ## Prerequisites
@@ -38,13 +38,11 @@ ansible-galaxy collection install community.general
 
 ## Configuration
 
-1. Update `inventory/hosts.yml` with actual IP addresses from Terraform:
+1. Run the update script to generate inventory from Terraform outputs:
 ```bash
-   cd terraform
-   terraform output
+   ./update_inventory.sh
 ```
 
-2. Copy the external IPs to `inventory/hosts.yml`
 
 ## Usage
 

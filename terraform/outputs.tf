@@ -103,7 +103,7 @@ output "cluster_summary" {
   value       = <<-EOT
     
     ╔════════════════════════════════════════════════════════╗
-    ║          Spark Cluster Deployment Summary             ║
+    ║          Spark Cluster Deployment Summary              ║
     ╚════════════════════════════════════════════════════════╝
     
     Cluster Name: ${var.cluster_name}
@@ -111,24 +111,24 @@ output "cluster_summary" {
     Zone:         ${var.zone}
     
     ┌─────────────────────────────────────────────────────┐
-    │ Master Node                                          │
+    │ Master Node                                         │
     ├─────────────────────────────────────────────────────┤
-    │ Name:         spark-master                          │
+    │ Name:         spark-master                          
     │ Internal IP:  ${module.compute.master_internal_ip}
     │ External IP:  ${module.compute.master_external_ip}
     │ Web UI:       http://${module.compute.master_external_ip}:8080
     └─────────────────────────────────────────────────────┘
     
     ┌─────────────────────────────────────────────────────┐
-    │ Worker Nodes (${var.num_workers})                                      │
+    │ Worker Nodes (${var.num_workers})                   │
     ├─────────────────────────────────────────────────────┤
     ${join("\n    ", [for idx, ip in module.compute.worker_internal_ips : "│ Worker ${idx + 1}: ${ip} (ext: ${module.compute.worker_external_ips[idx]})"])}
     └─────────────────────────────────────────────────────┘
     
     ┌─────────────────────────────────────────────────────┐
-    │ Edge Node                                            │
+    │ Edge Node                                           │
     ├─────────────────────────────────────────────────────┤
-    │ Name:         spark-edge                            │
+    │ Name:         spark-edge                            
     │ Internal IP:  ${module.compute.edge_internal_ip}
     │ External IP:  ${module.compute.edge_external_ip}
     └─────────────────────────────────────────────────────┘

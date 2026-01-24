@@ -1,10 +1,9 @@
 # Scripts
 
-Utility scripts for Spark cluster management.
+This directory contains utility scripts for the Spark cluster.
 
+## Available Scripts
 
-## Structure
-
-- `wordcount/` - WordCount application and test scripts
-- `deployment/` - Deployment helper scripts
-- `monitoring/` - Monitoring and performance scripts.
+- Analysis scripts (to be added)
+- Automation scripts (to be added)
+- Testing scripts (to be added)

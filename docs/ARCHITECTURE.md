@@ -2,50 +2,215 @@
 
 ## Overview
 
-Apache Spark cluster on GCP with the following components:
+This document describes the actual deployed architecture of the Spark GCP Automation project. The cluster runs Apache Spark 3.5.0 in **Standalone Mode** (no HDFS) with integrated monitoring via Prometheus and Grafana.
 
 ## Components
 
 ### Master Node
 
-- **Role**: Spark Master
-- **Instance Type**: n1-standard-2
+- **Role**: Spark Master + Monitoring Stack
+- **Instance Type**: n1-standard-4 (4 vCPU, 15GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **Services**: Spark Master, Web UI (8080)
+- **Services**:
+  - Spark Master (port 7077)
+  - Spark Master Web UI (port 8080)
+  - Prometheus (port 9090)
+  - Grafana (port 3000)
+  - Node Exporter (port 9100)
 
-### Worker Nodes (3x)
+### Worker Nodes (1-N, scalable)
 
 - **Role**: Spark Workers
-- **Instance Type**: n1-standard-2
+- **Instance Type**: n1-standard-4 (4 vCPU, 15GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **Services**: Spark Worker
+- **Services**:
+  - Spark Worker
+  - Spark Worker Web UI (port 8081)
+  - Node Exporter (port 9100)
+- **Executor Resources**: Dynamically calculated (75% of available: 3 cores, 11GB RAM per worker)
 
 ### Edge Node
 
-- **Role**: Job Submission
-- **Instance Type**: n1-standard-1
+- **Role**: Job Submission + Client Tools
+- **Instance Type**: n1-standard-2 (2 vCPU, 7.5GB RAM)
 - **OS**: Ubuntu 22.04 LTS
-- **Services**: Spark Client
+- **Services**:
+  - Spark Client
+  - WordCount test scripts
+  - Node Exporter (port 9100)
 
 ## Network Architecture
+
 ```text
-Internet
-    |
-    v
-GCP VPC (10.0.0.0/16)
-    |
-    +-- Subnet: spark-subnet (10.0.0.0/24)
-        |
-        +-- spark-master (10.0.0.10)
-        +-- spark-worker-1 (10.0.0.11)
-        +-- spark-worker-2 (10.0.0.12)
-        +-- spark-worker-3 (10.0.0.13)
-        +-- spark-edge (10.0.0.20)
+                     Internet
+                         |
+                         | (External IPs)
+                         v
+            GCP Firewall (Configurable IPs)
+                         |
+                         v
+        ┌────────────────────────────────┐
+        │   VPC: spark-vpc               │
+        │   Subnet: 10.0.0.0/24          │
+        └────────────────────────────────┘
+                         |
+         ┌───────────────┼─────...───────┐
+         |               |               |
+         v               v               v
+   ┌─────────┐    ┌─────────┐    ┌─────────┐
+   │ Master  │    │Worker-1 │    │Worker-N │
+   │10.0.0.10│    │10.0.0.11│    │10.0.0.13│
+   └─────────┘    └─────────┘    └─────────┘
+         |                              
+         v                              
+   ┌─────────┐                          
+   │  Edge   │                          
+   │10.0.0.20│                          
+   └─────────┘                          
 ```
 
 ## Firewall Rules
 
-- Allow SSH (22) from authorized IPs
-- Allow Spark Master UI (8080) from authorized IPs
-- Allow Spark Worker UI (8081) from VPC
-- Allow internal communication within VPC
+| Rule | Port | Source | Purpose |
+|------|------|--------|---------|
+| allow-ssh | 22 | Configurable IPs | SSH access |
+| allow-spark-ui | 8080 | Configurable IPs | Spark Master UI |
+| allow-monitoring-ui | 3000, 9090 | Configurable IPs | Grafana, Prometheus |
+| allow-internal | All | 10.0.0.0/24 | Inter-node communication |
+
+**Default**: `0.0.0.0/0` (insecure, use `allowed_ssh_ips` and `allowed_ui_ips` in terraform.tfvars)
+
+## Storage Architecture
+
+- **Mode**: Spark Standalone (no HDFS)
+- **Local Storage**: 50GB boot disk per node
+- **Temporary Data**: `/tmp/spark-events` (local filesystem)
+- **Job Results**: Saved to local filesystem on worker nodes, collected by driver
+
+**Note**: For production distributed storage, integrate with GCS (future roadmap item).
+
+## Monitoring Architecture
+
+```text
+┌──────────────────────────────────────────┐
+│           Grafana Dashboard              │
+│           (Master:3000)                  │
+└──────────┬───────────────────────────────┘
+           │ Queries
+           v
+┌──────────────────────────────────────────┐
+│         Prometheus Server                │
+│         (Master:9090)                    │
+└──────────┬───────────────────────────────┘
+           │ Scrapes metrics (every 15s)
+           v
+    ┌──────┴──────┬────...───┬──────────┐
+    v             v          v          v
+┌─────────┐  ┌─────────┐ ┌─────────┐ ┌─────────┐
+│ Master  │  │Worker-1 │ │Worker-3 │ │  Edge   │
+│Exporter │  │Exporter │ │Exporter │ │Exporter │
+│  :9100  │  │  :9100  │ │  :9100  │ │  :9100  │
+└─────────┘  └─────────┘ └─────────┘ └─────────┘
+```
+
+**Metrics Collected**:
+- CPU usage per node
+- Memory utilization
+- Network I/O (bytes in/out)
+- Disk I/O (read/write)
+- Spark worker status
+
+## Scaling Behavior
+
+The cluster supports dynamic scaling (N workers):
+
+1. **Terraform**: Adjust `num_workers` variable
+2. **Inventory**: Auto-generated by `update_inventory.sh`
+3. **Prometheus**: Auto-discovers new workers via Jinja2 templates
+4. **Grafana**: Displays new nodes automatically (labeled by `node_name`)
+5. **Spark Jobs**: Executor count/resources calculated dynamically from worker count
+
+## High Availability
+
+**Current State**: Single master (no HA)
+
+**Future Considerations**:
+- Standby master with ZooKeeper coordination
+- Shared state storage via GCS
+- Automatic failover scripts
+
+## Security Layers
+
+1. **Network**:
+   - Private subnet (10.0.0.0/24)
+   - Firewall rules with IP allowlists
+   - No public access to internal services
+
+2. **Authentication**:
+   - SSH key-based authentication only
+   - Grafana default credentials (admin/admin) 
+
+3. **Encryption**:
+   - In-transit: GCP managed (VPC)
+   - At-rest: Boot disk encryption enabled by default
+
+## Performance Optimizations
+
+- **Ansible**: Connection pooling (ControlMaster), fact caching
+- **CLI**: Inventory caching, parallel file uploads (ThreadPoolExecutor)
+- **Spark**: Dynamic executor allocation based on cluster size
+
+### Dynamic Resource Detection
+
+The cluster automatically adapts to scaling changes through intelligent resource detection:
+
+**How It Works:**
+1. **API Query**: Job submission script queries Spark Master REST API (`http://master:8080/json/`)
+2. **ALIVE Filtering**: Parses JSON response and filters only workers in `"state": "ALIVE"`
+3. **Resource Aggregation**: Sums cores and memory across all alive workers
+   ```python
+   total_cores = sum(worker['cores'] for worker in alive_workers)
+   total_memory_gb = sum(worker['memory'] for worker in alive_workers) // 1024
+   ```
+4. **75% Allocation**: Reserves 25% for OS, JVM overhead, and network I/O
+   ```bash
+   allocated_cores = total_cores * 0.75
+   allocated_memory = total_memory * 0.75
+   ```
+5. **Per-Executor Calculation**: Divides allocated resources equally across workers
+   ```bash
+   executor_cores = allocated_cores / num_workers
+   executor_memory = allocated_memory / num_workers
+   ```
+
+**Example Scaling Behavior:**
+
+| Workers | Total Resources | Allocated (75%) | Per Executor |
+|---------|----------------|-----------------|--------------|
+| 1       | 4 cores, 12GB  | 3 cores, 9GB    | 3 cores, 9GB |
+| 2       | 8 cores, 24GB  | 6 cores, 18GB   | 3 cores, 9GB |
+| 3       | 12 cores, 36GB | 9 cores, 27GB   | 3 cores, 9GB |
+
+**Benefits:**
+- ✅ Zero manual configuration when scaling
+- ✅ Optimal resource utilization regardless of cluster size
+- ✅ Prevents OOM crashes with safety buffer
+- ✅ Automatically excludes DEAD/offline workers
+
+## Software Versions
+
+| Component | Version |
+|-----------|---------|
+| Apache Spark | 3.5.0 |
+| Hadoop Libraries | 3.x (bundled, no HDFS cluster) |
+| Java | OpenJDK 11 |
+| Python | 3.x |
+| Prometheus | 2.45.0 |
+| Grafana | Latest (via apt) |
+| Node Exporter | Latest |
+
+## Deployment Time
+
+- **Infrastructure Provisioning**: ~2-3 minutes (Terraform)
+- **Configuration**: ~3-4 minutes (Ansible)
+- **Total**: ~5-6 minutes (from `deploy` to ready cluster)

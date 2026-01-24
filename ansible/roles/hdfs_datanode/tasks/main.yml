@@ -1,0 +1,44 @@
+---
+# Configure HDFS DataNode
+
+- name: Create core-site.xml
+  ansible.builtin.template:
+    src: core-site.xml.j2
+    dest: /opt/hadoop/current/etc/hadoop/core-site.xml
+    mode: '0644'
+  become: true
+
+- name: Create hdfs-site.xml for DataNode
+  ansible.builtin.template:
+    src: hdfs-site-datanode.xml.j2
+    dest: /opt/hadoop/current/etc/hadoop/hdfs-site.xml
+    mode: '0644'
+  become: true
+
+- name: Create HDFS DataNode systemd service
+  ansible.builtin.template:
+    src: hdfs-datanode.service.j2
+    dest: /etc/systemd/system/hdfs-datanode.service
+    mode: '0644'
+  become: true
+  notify: Restart HDFS DataNode
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+  become: true
+
+- name: Enable and start HDFS DataNode
+  ansible.builtin.systemd:
+    name: hdfs-datanode
+    enabled: true
+    state: started
+  become: true
+
+- name: Wait for DataNode to be ready
+  ansible.builtin.wait_for:
+    host: 0.0.0.0
+    port: 9866
+    delay: 5
+    timeout: 60
+  become: true

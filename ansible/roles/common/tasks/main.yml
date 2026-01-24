@@ -1,13 +1,24 @@
 ---
 # Common tasks for all nodes
 
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 3600
+- name: Wait for system to be ready
+  ansible.builtin.wait_for:
+    path: /var/lib/cloud/instance/boot-finished
+    timeout: 300
   become: true
 
-- name: Install common packages
+- name: Update apt cache (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600  # Cache for 1 hour (optimization)
+  become: true
+  when: ansible_os_family == "Debian"
+  retries: 3
+  delay: 10
+  register: apt_update
+  until: apt_update is succeeded
+
+- name: Install common packages (Debian/Ubuntu)
   ansible.builtin.apt:
     name:
       - curl
@@ -20,19 +31,46 @@
       - unzip
       - tar
       - python3
-      - python3-pip
       - build-essential
     state: present
+    update_cache: false
   become: true
+  when: ansible_os_family == "Debian"
+  retries: 3
+  delay: 10
+  register: pkg_install
+  until: pkg_install is succeeded
 
-# Timezone configuration (commented out - variable not defined)
-# - name: Set timezone
-#   community.general.timezone:
-#     name: "{{ timezone }}"
-#   become: true
+- name: Install pip for Python 3 (Debian/Ubuntu)
+  ansible.builtin.shell: |
+    if ! command -v pip3 &> /dev/null; then
+      curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+    fi
+  become: true
+  when: ansible_os_family == "Debian"
+  changed_when: false
+
+- name: Install common packages (RedHat/CentOS)
+  ansible.builtin.yum:
+    name:
+      - curl
+      - wget
+      - git
+      - vim
+      - htop
+      - net-tools
+      - bind-utils  # equivalent to dnsutils
+      - unzip
+      - tar
+      - python3
+      - python3-pip
+      - "@Development Tools"  # equivalent to build-essential
+    state: present
+  become: true
+  when: ansible_os_family == "RedHat"
 
 - name: Set locale
-  community.general.locale_gen:
+  ansible.builtin.locale_gen:
     name: "{{ locale }}"
     state: present
   become: true
@@ -41,7 +79,7 @@
   ansible.builtin.command: swapoff -a
   become: true
   changed_when: false
-  failed_when: false
+  ignore_errors: true
 
 - name: Comment out swap in /etc/fstab
   ansible.builtin.replace:
@@ -51,33 +89,49 @@
   become: true
 
 - name: Set system limits for Spark
-  community.general.pam_limits:
+  ansible.builtin.pam_limits:
     domain: "*"
     limit_type: "{{ item.limit_type }}"
     limit_item: "{{ item.limit_item }}"
     value: "{{ item.value }}"
   loop:
-    - {limit_type: 'soft', limit_item: 'nofile', value: '65536'}
-    - {limit_type: 'hard', limit_item: 'nofile', value: '65536'}
-    - {limit_type: 'soft', limit_item: 'nproc', value: '32768'}
-    - {limit_type: 'hard', limit_item: 'nproc', value: '32768'}
+    - { limit_type: 'soft', limit_item: 'nofile', value: '65536' }
+    - { limit_type: 'hard', limit_item: 'nofile', value: '65536' }
+    - { limit_type: 'soft', limit_item: 'nproc', value: '32768' }
+    - { limit_type: 'hard', limit_item: 'nproc', value: '32768' }
   become: true
 
 - name: Create spark directories
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.path }}"
     state: directory
-    mode: '0755'
+    mode: "{{ item.mode }}"
   loop:
-    - /tmp/spark-events
-    - /var/run/spark
-    - /var/log/spark
+    - { path: '/tmp/spark-events', mode: '1777' }
+    - { path: '/var/run/spark', mode: '0755' }
+    - { path: '/var/log/spark', mode: '0755' }
+  become: true
+
+- name: Create sample data file for testing
+  ansible.builtin.copy:
+    dest: /tmp/sample.txt
+    content: |
+      Apache Spark is a unified analytics engine for large-scale data processing.
+      Spark provides high-level APIs in Java, Scala, Python and R.
+      It also supports a rich set of higher-level tools including Spark SQL.
+      MLlib for machine learning, GraphX for graph processing.
+      Structured Streaming for incremental computation and stream processing.
+      Apache Spark achieves high performance for both batch and streaming data.
+    mode: '0644'
+    owner: root
+    group: root
   become: true
 
 - name: Install Python packages for Spark
   ansible.builtin.pip:
     name:
-      - pyspark
+      # pyspark removed - bundled with Spark installation
       - py4j
     state: present
   become: true
+
