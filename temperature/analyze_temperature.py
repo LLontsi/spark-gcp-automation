@@ -59,7 +59,7 @@ def main():
         hottest_year = hottest_year_row.year
         hottest_temp = round(hottest_year_row.avg_temp, 2)
         
-        # Préparer les résultats
+        # Préparer les résultats JSON
         results_data = {
             "hottest_year": int(hottest_year),
             "hottest_avg_temperature": hottest_temp,
@@ -74,6 +74,21 @@ def main():
         print(f"{'Année':<8} {'Temp Moy':<12} {'Min':<8} {'Max':<8} {'Mesures':<12}")
         print("-" * 60)
         
+        # Construire le texte de résultat
+        result_text_lines = []
+        result_text_lines.append("====================================")
+        result_text_lines.append("   ANALYSE DES TEMPÉRATURES")
+        result_text_lines.append("====================================")
+        result_text_lines.append("")
+        result_text_lines.append(f"Année la plus chaude : {hottest_year}")
+        result_text_lines.append(f"Température moyenne  : {hottest_temp}°C")
+        result_text_lines.append(f"Temps d'exécution    : {results_data['execution_time_seconds']}s")
+        result_text_lines.append(f"Total de mesures     : {total_rows:,}")
+        result_text_lines.append("")
+        result_text_lines.append("Détails par année:")
+        result_text_lines.append(f"{'Année':<8} {'Temp Moy':<12}")
+        result_text_lines.append("─" * 25)
+        
         for row in results:
             year_data = {
                 "year": int(row.year),
@@ -87,6 +102,11 @@ def main():
             print(f"{row.year:<8} {row.avg_temp:>10.2f}°C  "
                   f"{row.min_temp:>6}°C  {row.max_temp:>6}°C  "
                   f"{row.records:>10,}")
+            
+            result_text_lines.append(f"{row.year:<8} {row.avg_temp:>10.2f}°C")
+        
+        result_text_lines.append("")
+        result_text_lines.append("====================================")
         
         print("-" * 60)
         print()
@@ -97,41 +117,38 @@ def main():
         print(f"   Température moyenne  : {hottest_temp}°C")
         print("="*60)
         
-        # Sauvegarder les résultats dans HDFS
+        # Sauvegarder dans HDFS
+        print()
+        print(f"💾 Sauvegarde des résultats dans HDFS: {output_path}")
         
-        # 1. Résultat texte formaté
-        result_text = f"""====================================
-   ANALYSE DES TEMPÉRATURES
-====================================
-
-Année la plus chaude : {hottest_year}
-Température moyenne  : {hottest_temp}°C
-Temps d'exécution    : {results_data['execution_time_seconds']}s
-Total de mesures     : {total_rows:,}
-
-Détails par année:
-{'Année':<8} {'Temp Moy':<12}
-{'─'*25}
-"""
-        for year_data in results_data["years_analysis"]:
-            result_text += f"{year_data['year']:<8} {year_data['avg_temperature']:>10.2f}°C\n"
-        
-        result_text += "\n====================================\n"
-        
-        # Sauvegarder le texte
-        text_rdd = spark.sparkContext.parallelize([result_text])
+        # 1. Sauvegarder le texte (chaque ligne = une ligne dans HDFS)
+        text_rdd = spark.sparkContext.parallelize(result_text_lines, 1)
         text_rdd.saveAsTextFile(f"{output_path}/result.txt")
+        print(f"   ✅ result.txt sauvegardé")
         
-        # 2. Résultat JSON
+        # 2. Sauvegarder le JSON (une seule ligne)
         json_str = json.dumps(results_data, indent=2)
-        json_rdd = spark.sparkContext.parallelize([json_str])
+        json_rdd = spark.sparkContext.parallelize([json_str], 1)
         json_rdd.saveAsTextFile(f"{output_path}/result.json")
+        print(f"   ✅ result.json sauvegardé")
         
         execution_time = time.time() - start_time
         print()
         print(f"⏱️  Temps d'exécution total: {execution_time:.2f}s")
-        print(f"💾 Résultats sauvegardés dans: {output_path}")
         print()
+        
+        # Vérifier que les fichiers ont bien été écrits
+        print("🔍 Vérification des fichiers HDFS:")
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["/opt/hadoop/current/bin/hdfs", "dfs", "-ls", "-h", f"{output_path}/"],
+                capture_output=True,
+                text=True
+            )
+            print(result.stdout)
+        except Exception as e:
+            print(f"   Impossible de lister: {e}")
         
     except Exception as e:
         print(f"\n❌ ERREUR: {str(e)}")
