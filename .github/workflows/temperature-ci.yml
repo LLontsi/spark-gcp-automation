@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       regenerate_data:
-        description: 'Régénérer les données (2GB)'
+        description: 'Regenerate data (100MB)'
         required: false
         type: boolean
         default: false
@@ -40,52 +40,47 @@ jobs:
 
       - name: Deploy temperature project to edge node
         run: |
-          echo " Déploiement du projet temperature sur l'edge node..."
+          echo "Deploying temperature project to edge node..."
           
-          # Créer le dossier sur l'edge si nécessaire
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} "mkdir -p ~/spark-jobs/temperature"
           
-          # Copier tous les fichiers
           scp -r temperature/* ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:~/spark-jobs/temperature/
           
-          # Rendre les scripts exécutables
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} "chmod +x ~/spark-jobs/temperature/*.sh"
           
-          echo " Déploiement terminé"
+          echo "Deployment completed"
 
       - name: Verify HDFS connectivity
         run: |
-          echo " Vérification HDFS..."
+          echo "Verifying HDFS connectivity..."
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
             if /opt/hadoop/current/bin/hdfs dfs -test -e /user/spark 2>/dev/null; then
-              echo " HDFS accessible"
+              echo "HDFS is accessible"
             else
-              echo " HDFS non accessible"
+              echo "ERROR: HDFS not accessible"
               exit 1
             fi
           EOF
 
       - name: Generate temperature data (if needed)
         run: |
-          echo " Vérification/Génération des données..."
+          echo "Checking/Generating temperature data..."
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
             cd ~/spark-jobs/temperature
             
             HDFS_DATA_PATH="hdfs://10.0.0.10:9000/user/spark/temperature/data.csv"
             
-            # Si workflow_dispatch avec regenerate_data=true, supprimer les anciennes données
             if [ "${{ github.event.inputs.regenerate_data }}" == "true" ]; then
-              echo " Régénération forcée des données..."
+              echo "Forced data regeneration requested..."
               /opt/hadoop/current/bin/hdfs dfs -rm -r -f /user/spark/temperature/data.csv 2>/dev/null || true
             fi
             
-            # Vérifier si données existent
             if /opt/hadoop/current/bin/hdfs dfs -test -e "$HDFS_DATA_PATH" 2>/dev/null; then
               FILE_SIZE=$(/opt/hadoop/current/bin/hdfs dfs -du -h "$HDFS_DATA_PATH" | awk '{print $1, $2}')
-              echo " Données existantes: $FILE_SIZE"
-              echo "   Génération ignorée (utilisez workflow_dispatch pour forcer)"
+              echo "Existing data found: $FILE_SIZE"
+              echo "Skipping generation (use workflow_dispatch to force)"
             else
-              echo "  Données manquantes, lancement génération..."
+              echo "No data found, starting generation..."
               ./generate_data.sh
             fi
           EOF
@@ -93,16 +88,14 @@ jobs:
       - name: Run temperature analysis
         id: analyze
         run: |
-          echo " Lancement analyse Spark..."
+          echo "Starting Spark analysis..."
           echo ""
           
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
             cd ~/spark-jobs/temperature
             
-            # Supprimer anciens résultats
             /opt/hadoop/current/bin/hdfs dfs -rm -r -f /user/spark/temperature/results 2>/dev/null || true
             
-            # Lancer l'analyse
             START_TIME=$(date +%s)
             
             /opt/spark/current/bin/spark-submit \
@@ -118,47 +111,112 @@ jobs:
             DURATION=$((END_TIME - START_TIME))
             
             echo ""
-            echo "  Temps d'exécution: ${DURATION}s"
+            echo "Execution time: ${DURATION}s"
           EOF
 
-      - name: Retrieve results from HDFS
-        id: results
+      - name: Verify results in HDFS
         run: |
-          echo " Récupération des résultats..."
+          echo "Verifying results in HDFS..."
+          ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
+            echo "HDFS results structure:"
+            /opt/hadoop/current/bin/hdfs dfs -ls -R /user/spark/temperature/results/
+            
+            echo ""
+            echo "Checking result.txt:"
+            if /opt/hadoop/current/bin/hdfs dfs -test -e /user/spark/temperature/results/result.txt/part-00000; then
+              echo "result.txt exists"
+            else
+              echo "ERROR: result.txt missing"
+              exit 1
+            fi
+            
+            echo ""
+            echo "Checking result.json:"
+            if /opt/hadoop/current/bin/hdfs dfs -test -e /user/spark/temperature/results/result.json/part-00000; then
+              echo "result.json exists"
+            else
+              echo "ERROR: result.json missing"
+              exit 1
+            fi
+          EOF
+
+      - name: Download results from HDFS to edge
+        run: |
+          echo "Downloading results from HDFS to edge node..."
+          ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
+            echo "Cleaning temporary files..."
+            rm -f /tmp/result.txt /tmp/result.json
+            
+            echo "Copying from HDFS..."
+            /opt/hadoop/current/bin/hdfs dfs -get -f /user/spark/temperature/results/result.txt/part-00000 /tmp/result.txt
+            /opt/hadoop/current/bin/hdfs dfs -get -f /user/spark/temperature/results/result.json/part-00000 /tmp/result.json
+            
+            echo ""
+            echo "Files copied:"
+            ls -lh /tmp/result.txt /tmp/result.json
+            
+            echo ""
+            echo "File sizes:"
+            du -h /tmp/result.txt /tmp/result.json
+            
+            echo ""
+            echo "result.json preview:"
+            head -3 /tmp/result.json
+            
+            echo ""
+            echo "result.txt preview:"
+            head -10 /tmp/result.txt
+          EOF
+
+      - name: Download results to GitHub runner
+        run: |
+          echo "Downloading results to GitHub runner..."
+          
+          mkdir -p results
+          
+          scp ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/tmp/result.txt results/result.txt
+          scp ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/tmp/result.json results/result.json
+          
+          echo ""
+          echo "Files downloaded to results/"
+          ls -lh results/
+          
+          echo ""
+          echo "Verifying result.json:"
+          if [ -f results/result.json ]; then
+            cat results/result.json
+            echo ""
+            echo "result.json is present and readable"
+          else
+            echo "ERROR: result.json missing!"
+            exit 1
+          fi
+          
+          echo ""
+          echo "Verifying result.txt:"
+          if [ -f results/result.txt ]; then
+            echo "result.txt is present ($(wc -l < results/result.txt) lines)"
+            head -5 results/result.txt
+          else
+            echo "ERROR: result.txt missing!"
+            exit 1
+          fi
+
+      - name: Display results in console
+        run: |
+          echo "Retrieving results from HDFS..."
           echo ""
           
           ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
-            # Récupérer le résultat texte
-            echo " Résultat texte:"
-            echo "═══════════════════════════════════════════════════════════"
+            echo "Text result:"
+            echo "==========================================================="
             /opt/hadoop/current/bin/hdfs dfs -cat /user/spark/temperature/results/result.txt/part-00000
-            echo "═══════════════════════════════════════════════════════════"
+            echo "==========================================================="
             echo ""
             
-            # Récupérer le résultat JSON
-            echo " Résultat JSON:"
+            echo "JSON result:"
             /opt/hadoop/current/bin/hdfs dfs -cat /user/spark/temperature/results/result.json/part-00000
           EOF
-
-      - name: Download results artifacts
-        run: |
-          echo "Téléchargement des résultats..."
-          
-          # Créer dossier local pour résultats
-          mkdir -p results
-          
-          # Télécharger les résultats depuis HDFS via SCP
-          ssh ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }} << 'EOF'
-            # Copier depuis HDFS vers filesystem local
-            /opt/hadoop/current/bin/hdfs dfs -get /user/spark/temperature/results/result.txt/part-00000 /tmp/result.txt
-            /opt/hadoop/current/bin/hdfs dfs -get /user/spark/temperature/results/result.json/part-00000 /tmp/result.json
-          EOF
-          
-          # Télécharger via SCP
-          scp ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/tmp/result.txt results/
-          scp ${{ secrets.EDGE_USER }}@${{ secrets.EDGE_HOST }}:/tmp/result.json results/
-          
-          echo " Résultats téléchargés"
 
       - name: Upload results as artifacts
         uses: actions/upload-artifact@v4
@@ -170,36 +228,35 @@ jobs:
       - name: Parse and display results
         run: |
           echo ""
-          echo "═══════════════════════════════════════════════════════════"
-          echo "             RÉSULTATS DE L'ANALYSE"
-          echo "═══════════════════════════════════════════════════════════"
+          echo "==========================================================="
+          echo "            ANALYSIS RESULTS"
+          echo "==========================================================="
           echo ""
           
           if [ -f results/result.json ]; then
-            # Extraire les informations clés du JSON
             HOTTEST_YEAR=$(cat results/result.json | grep -o '"hottest_year": [0-9]*' | grep -o '[0-9]*')
             HOTTEST_TEMP=$(cat results/result.json | grep -o '"hottest_avg_temperature": [0-9.]*' | grep -o '[0-9.]*')
             EXEC_TIME=$(cat results/result.json | grep -o '"execution_time_seconds": [0-9.]*' | grep -o '[0-9.]*')
             TOTAL_RECORDS=$(cat results/result.json | grep -o '"total_records": [0-9]*' | grep -o '[0-9]*')
             
-            echo " Année la plus chaude  : $HOTTEST_YEAR"
-            echo "  Température moyenne   : ${HOTTEST_TEMP}°C"
-            echo "  Temps d'exécution     : ${EXEC_TIME}s"
-            echo " Total de mesures      : $TOTAL_RECORDS"
+            echo "Hottest year         : $HOTTEST_YEAR"
+            echo "Average temperature  : ${HOTTEST_TEMP} C"
+            echo "Execution time       : ${EXEC_TIME}s"
+            echo "Total records        : $TOTAL_RECORDS"
             echo ""
-            echo "═══════════════════════════════════════════════════════════"
+            echo "==========================================================="
             echo ""
-            echo " Résultat complet :"
+            echo "Complete result:"
             cat results/result.txt
           else
-            echo "  Fichier résultat non trouvé"
+            echo "ERROR: Result file not found"
             exit 1
           fi
 
       - name: Create job summary
         if: always()
         run: |
-          echo "#  Analyse des Températures - Résultats" >> $GITHUB_STEP_SUMMARY
+          echo "# Temperature Analysis - Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ -f results/result.json ]; then
@@ -208,28 +265,28 @@ jobs:
             EXEC_TIME=$(cat results/result.json | grep -o '"execution_time_seconds": [0-9.]*' | grep -o '[0-9.]*')
             TOTAL_RECORDS=$(cat results/result.json | grep -o '"total_records": [0-9]*' | grep -o '[0-9]*')
             
-            echo "##  Résultat Principal" >> $GITHUB_STEP_SUMMARY
+            echo "## Main Result" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Métrique | Valeur |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-            echo "|  **Année la plus chaude** | **$HOTTEST_YEAR** |" >> $GITHUB_STEP_SUMMARY
-            echo "|  Température moyenne | ${HOTTEST_TEMP}°C |" >> $GITHUB_STEP_SUMMARY
-            echo "|  Temps d'exécution | ${EXEC_TIME}s |" >> $GITHUB_STEP_SUMMARY
-            echo "|  Total de mesures | $(printf "%'d" $TOTAL_RECORDS) |" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Hottest year** | **$HOTTEST_YEAR** |" >> $GITHUB_STEP_SUMMARY
+            echo "| Average temperature | ${HOTTEST_TEMP} C |" >> $GITHUB_STEP_SUMMARY
+            echo "| Execution time | ${EXEC_TIME}s |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total records | $(printf "%'d" $TOTAL_RECORDS) |" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
-            echo "##  Détails par Année" >> $GITHUB_STEP_SUMMARY
+            echo "## Details by Year" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             cat results/result.txt >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "##  Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Les résultats complets sont disponibles dans les artifacts de ce workflow." >> $GITHUB_STEP_SUMMARY
+            echo "Complete results are available in workflow artifacts." >> $GITHUB_STEP_SUMMARY
           else
-            echo " **Erreur**: Impossible de récupérer les résultats" >> $GITHUB_STEP_SUMMARY
+            echo "**ERROR**: Unable to retrieve results" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -247,18 +304,18 @@ jobs:
             const resultText = fs.readFileSync('results/result.txt', 'utf8');
             const resultJson = JSON.parse(fs.readFileSync('results/result.json', 'utf8'));
             
-            const comment = `## 🌡️ Résultats de l'Analyse des Températures
+            const comment = `## Temperature Analysis Results
             
-            ### 🎯 Résultat Principal
+            ### Main Result
             
-            | Métrique | Valeur |
-            |----------|--------|
-            |  **Année la plus chaude** | **${resultJson.hottest_year}** |
-            |  Température moyenne | ${resultJson.hottest_avg_temperature}°C |
-            |  Temps d'exécution | ${resultJson.execution_time_seconds}s |
-            |  Total de mesures | ${resultJson.total_records.toLocaleString()} |
+            | Metric | Value |
+            |--------|-------|
+            | **Hottest year** | **${resultJson.hottest_year}** |
+            | Average temperature | ${resultJson.hottest_avg_temperature} C |
+            | Execution time | ${resultJson.execution_time_seconds}s |
+            | Total records | ${resultJson.total_records.toLocaleString()} |
             
-            ###  Détails par Année
+            ### Details by Year
             
             \`\`\`
             ${resultText}
@@ -294,7 +351,7 @@ jobs:
             const oldArtifacts = artifacts.data.artifacts
               .filter(artifact => artifact.name.startsWith('temperature-analysis-results-'))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(5); // Garder les 5 plus récents
+              .slice(5);
             
             for (const artifact of oldArtifacts) {
               await github.rest.actions.deleteArtifact({
