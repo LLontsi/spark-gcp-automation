@@ -5,29 +5,34 @@
       - apt-transport-https
       - software-properties-common
     state: present
+  become: true
 
 - name: Add Grafana GPG key
   ansible.builtin.apt_key:
     url: https://packages.grafana.com/gpg.key
     state: present
+  become: true
 
 - name: Add Grafana repository
   ansible.builtin.apt_repository:
     repo: "deb https://packages.grafana.com/oss/deb stable main"
     state: present
     filename: grafana
+  become: true
 
 - name: Install Grafana
   ansible.builtin.apt:
     name: grafana
     state: present
-    update_cache: false  # Rely on common role cache
+    update_cache: false
+  become: true
 
 - name: Enable and start grafana-server
   ansible.builtin.systemd:
     name: grafana-server
     enabled: true
     state: started
+  become: true
 
 - name: Configure Prometheus Datasource
   ansible.builtin.copy:
@@ -42,7 +47,9 @@
           isDefault: true
     owner: root
     group: grafana
-  notify: restart grafana
+    mode: '0644'
+  become: true
+  notify: Restart Grafana
 
 - name: Create dashboards directory
   ansible.builtin.file:
@@ -50,6 +57,8 @@
     state: directory
     owner: grafana
     group: grafana
+    mode: '0755'
+  become: true
 
 - name: Configure Dashboard Provider
   ansible.builtin.copy:
@@ -67,7 +76,9 @@
             path: /var/lib/grafana/dashboards
     owner: root
     group: grafana
-  notify: restart grafana
+    mode: '0644'
+  become: true
+  notify: Restart Grafana
 
 - name: Copy Spark Cluster Dashboard
   ansible.builtin.copy:
@@ -76,3 +87,4 @@
     owner: grafana
     group: grafana
     mode: '0644'
+  become: true

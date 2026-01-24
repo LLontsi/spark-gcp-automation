@@ -34,7 +34,7 @@
     - monitoring-common
     - java
     - spark-common
-    - hdfs-common
+    - hdfs_common
 
 
 # Critical path: HDFS NameNode and Spark Master must complete before workers
@@ -47,7 +47,7 @@
     - ../group_vars/spark-cluster.yml
   roles:
     - spark-master
-    - hdfs-namenode
+    - hdfs_namenode
 
 # Non-blocking: Edge node and monitoring can run in parallel with workers
 - name: Configure Monitoring Stack (Non-blocking)
@@ -80,7 +80,7 @@
     - ../group_vars/spark-cluster.yml
   roles:
     - spark-worker
-    - hdfs-datanode
+    - hdfs_datanode
 
 
 - name: Setup HDFS directory structure
