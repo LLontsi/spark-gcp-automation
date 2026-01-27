@@ -39,13 +39,13 @@ variable "subnet_cidr" {
 variable "allowed_ssh_ips" {
   description = "List of IP ranges allowed for SSH access"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # CHANGE THIS for security!
+  default     = ["0.0.0.0/0"] 
 }
 
 variable "allowed_ui_ips" {
   description = "List of IP ranges allowed for Web UI access"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # CHANGE THIS for security!
+  default     = ["0.0.0.0/0"] 
 }
 
 # Instance Configuration

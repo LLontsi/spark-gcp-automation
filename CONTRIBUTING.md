@@ -1,6 +1,6 @@
 # Contributing to Spark GCP Automation
 
-## 🌿 Branching Strategy
+##  Branching Strategy
 
 We use a simplified Git Flow:
 
@@ -8,7 +8,7 @@ We use a simplified Git Flow:
 - `lontsi` - Lontsi's development branch
 - `lado` - Lado's development branch
 
-## 📝 Commit Convention
+##  Commit Convention
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
 ```
@@ -37,7 +37,7 @@ docs(readme): update installation instructions
 ci(github): add terraform validation workflow
 ```
 
-## 🔄 Pull Request Process
+##  Pull Request Process
 
 1. Create a feature branch from your dev branch:
 ```bash
@@ -62,17 +62,17 @@ ci(github): add terraform validation workflow
 6. Request review from team member
 7. Merge after approval
 
-## ✅ Code Quality
+##  Code Quality
 
 - Run `terraform fmt` before committing Terraform code
 - Run `ansible-lint` before committing Ansible playbooks
 - Ensure all CI/CD checks pass
 - Add tests for new features
 
-## 🐛 Reporting Bugs
+##  Reporting Bugs
 
 Use GitHub Issues with the bug report template.
 
-## 💡 Suggesting Features
+##  Suggesting Features
 
 Use GitHub Issues with the feature request template.

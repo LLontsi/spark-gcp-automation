@@ -11,13 +11,13 @@ variable "network_name" {
 variable "allowed_ssh_ips" {
   description = "List of IP ranges allowed for SSH access"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # Change to your IP for security
+  default     = ["0.0.0.0/0"]
 }
 
 variable "allowed_ui_ips" {
   description = "List of IP ranges allowed for Web UI access"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # Change to your IP for security
+  default     = ["0.0.0.0/0"] 
 }
 
 variable "tags_master" {
