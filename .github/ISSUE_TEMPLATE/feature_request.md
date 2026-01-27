@@ -6,22 +6,22 @@ labels: enhancement
 assignees: ''
 ---
 
-## 🚀 Fonctionnalité demandée
+##  Fonctionnalité demandée
 
 <!-- Description claire de la fonctionnalité -->
 
-## 💡 Motivation
+## Motivation
 
 <!-- Pourquoi cette fonctionnalité serait utile -->
 
-## 📝 Solution proposée
+##  Solution proposée
 
 <!-- Comment vous imaginez cette fonctionnalité -->
 
-## 🔄 Alternatives considérées
+##  Alternatives considérées
 
 <!-- Autres solutions envisagées -->
 
-## 📋 Contexte additionnel
+##  Contexte additionnel
 
 <!-- Toute autre information pertinente -->

@@ -1,5 +1,5 @@
 # Terraform Backend Configuration (Optional but Recommended for Production)
-#
+
 # This enables:
 # 1. Remote state storage in Google Cloud Storage
 # 2. State locking to prevent concurrent modifications

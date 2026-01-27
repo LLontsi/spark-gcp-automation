@@ -18,11 +18,11 @@ num_workers  = 2  # Start small, scale as needed
 # Replace with YOUR IP addresses for production!
 # Find your IP: curl ifconfig.me
 allowed_ssh_ips = [
-  "0.0.0.0/0"  # WARNING: Open to internet! Replace with your IPs
+  "0.0.0.0/0"  
 ]
 
 allowed_ui_ips = [
-  "0.0.0.0/0"  # WARNING: Open to internet! Replace with your IPs
+  "0.0.0.0/0"  
 ]
 
 # Production example (uncomment and customize):

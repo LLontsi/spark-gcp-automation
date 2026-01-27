@@ -1,6 +1,4 @@
-# GCP Project Configuration
-# Copy this file to terraform.tfvars and fill in your values
-# DO NOT commit terraform.tfvars (it's in .gitignore)
+
 
 project_id = "my-spark-project-123456"
 region     = "europe-west1"

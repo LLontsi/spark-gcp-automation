@@ -1,6 +1,3 @@
----
-# Global variables for all hosts
-
 # System Configuration
 timezone: "Europe/Paris"
 locale: "en_US.UTF-8"
@@ -13,12 +10,16 @@ ansible_ssh_private_key_file: ~/.ssh/gcp_spark
 spark_master_hostname: spark-master
 spark_master_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
 
-# Spark Configuration
-spark_version: "3.5.0"
+
+spark_version: "3.5.8"
 spark_hadoop_version: "3"
-spark_download_url: "https://archive.apache.org/dist/spark/spark-{{ spark_version }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+
+spark_download_url: "https://downloads.apache.org/spark/spark-{{ spark_version }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}.tgz"
+
+
 spark_install_dir: /opt/spark
 spark_home: "{{ spark_install_dir }}/spark-{{ spark_version }}-bin-hadoop{{ spark_hadoop_version }}"
+spark_current_link: "{{ spark_install_dir }}/current"
 
 # Java Configuration
 java_version: "11"
@@ -30,7 +31,7 @@ spark_master_webui_port: 8080
 spark_worker_webui_port: 8081
 spark_history_server_port: 18080
 
-# Hadoop/HDFS Configuration
+
 hadoop_version: "3.3.6"
 hadoop_download_url: "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/hadoop-{{ hadoop_version }}.tar.gz"
 hadoop_install_dir: /opt/hadoop
@@ -38,8 +39,8 @@ hadoop_home: "{{ hadoop_install_dir }}/current"
 
 # HDFS Settings
 hdfs_namenode_ip: "{{ hostvars[groups['master'][0]]['internal_ip'] }}"
-hdfs_replication_factor: 2
-hdfs_block_size: 134217728  # 128MB
+hdfs_replication_factor: 2  
+hdfs_block_size: 134217728  
 hdfs_datanode_data_dir: /data/hadoop/datanode
 hdfs_namenode_data_dir: /data/hadoop/namenode
 
@@ -48,9 +49,25 @@ hdfs_namenode_port: 9000
 hdfs_namenode_http_port: 9870
 hdfs_datanode_port: 9866
 hdfs_datanode_http_port: 9864
+hdfs_datanode_ipc_port: 9867
 
-# Performance Tuning (n1-standard-4: 4 vCPU, 15GB RAM)
-spark_worker_cores: 4
-spark_worker_memory: "12g"
-spark_executor_memory: "10g"
-spark_driver_memory: "2g"
+
+spark_worker_cores: 1
+spark_worker_memory: "3g"
+spark_executor_memory: "2g"
+spark_driver_memory: "1g"
+
+
+prometheus_version: "2.45.0"
+prometheus_port: 9090
+node_exporter_port: 9100
+grafana_port: 3000
+
+
+spark_log_dir: /var/log/spark
+spark_history_dir: /tmp/spark-events
+hadoop_log_dir: /var/log/hadoop
+
+spark_ui_authentication: false  
+hdfs_permissions: true
+hdfs_superuser: ansible
