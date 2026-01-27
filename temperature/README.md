@@ -39,6 +39,6 @@ Le workflow GitHub Actions se déclenche automatiquement à chaque push sur `mai
 
 Le script affiche :
 - L'année la plus chaude
-- Températures moyennes par année .....
+- Températures moyennes par année ..... ...
 - Temps d'exécution
 - Statistiques des données
