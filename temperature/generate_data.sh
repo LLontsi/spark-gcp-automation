@@ -2,146 +2,62 @@
 set -e
 
 echo "=========================================="
-echo "  GÉNÉRATION DONNÉES DE TEMPÉRATURE"
+echo "  GÉNÉRATION DONNÉES MÉTÉO (2MB) - BASH"
 echo "=========================================="
-echo ""
 
 # Configuration
 HDFS_URL="hdfs://10.0.0.10:9000"
 OUTPUT_HDFS="$HDFS_URL/user/spark/temperature/data.csv"
 TEMP_FILE="/tmp/temperature_data.csv"
-TARGET_SIZE_MB=5  # ✅ CHANGÉ: 5MB au lieu de 100MB
+TARGET_SIZE_MB=2
 
-# Vérifier si les données existent déjà
-if /opt/hadoop/current/bin/hdfs dfs -test -e "$OUTPUT_HDFS" 2>/dev/null; then
-    echo "✅ Données existent déjà dans HDFS"
-    echo "   Localisation: $OUTPUT_HDFS"
-    FILE_SIZE=$(/opt/hadoop/current/bin/hdfs dfs -du -h "$OUTPUT_HDFS" | awk '{print $1, $2}')
-    echo "   Taille: $FILE_SIZE"
-    echo ""
-    echo "Pour régénérer, supprimez d'abord:"
-    echo "   hdfs dfs -rm $OUTPUT_HDFS"
-    exit 0
-fi
-
-echo "📊 Configuration:"
-echo "   Taille cible: ${TARGET_SIZE_MB}MB"
-echo "   Années: 2020-2025 (6 ans)"
-echo "   Villes: 50"
-echo "   Fréquence: horaire"
-echo ""
-
-# Créer le répertoire HDFS si nécessaire
-echo "📁 Création répertoire HDFS..."
+# Nettoyage préalable
+rm -f "$TEMP_FILE"
+/opt/hadoop/current/bin/hdfs dfs -rm -f "$OUTPUT_HDFS" 2>/dev/null || true
 /opt/hadoop/current/bin/hdfs dfs -mkdir -p /user/spark/temperature
 
-# Liste de 50 villes européennes
-CITIES=(
-    "Paris" "Lyon" "Marseille" "Toulouse" "Nice" 
-    "Berlin" "Hamburg" "Munich" "Cologne" "Frankfurt"
-    "London" "Birmingham" "Manchester" "Liverpool" "Leeds"
-    "Madrid" "Barcelona" "Valencia" "Seville" "Bilbao"
-    "Rome" "Milan" "Naples" "Turin" "Florence"
-    "Amsterdam" "Rotterdam" "Utrecht" "Eindhoven" "Groningen"
-    "Brussels" "Antwerp" "Ghent" "Liege" "Bruges"
-    "Vienna" "Graz" "Linz" "Salzburg" "Innsbruck"
-    "Zurich" "Geneva" "Basel" "Bern" "Lausanne"
-    "Stockholm" "Oslo" "Copenhagen" "Helsinki" "Dublin"
-)
+# Villes
+CITIES=("Paris" "Lyon" "Marseille" "Toulouse" "Nice" "Berlin" "Hamburg" "Munich" "London" "Manchester" "Madrid" "Rome" "Milan" "Brussels" "Vienna" "Zurich" "Geneva" "Amsterdam" "Dublin" "Oslo")
 
-echo "🔄 Génération des données..."
-
-# En-tête CSV
+echo "🔄 Génération des données en cours..."
 echo "date,city,temperature" > "$TEMP_FILE"
 
-# Calcul du nombre de lignes
-# 5MB ≈ 165,000 lignes (30 bytes par ligne)  # ✅ CHANGÉ
-# Pour plus de précision, générons en chunks
-TOTAL_LINES=165000  # ✅ CHANGÉ: 165k au lieu de 3.3M
+# 2MB représente environ 66,000 lignes
+TOTAL_LINES=70000
+CHUNK_SIZE=5000
 LINES_GENERATED=0
-CHUNK_SIZE=10000  # ✅ CHANGÉ: 10k au lieu de 100k pour plus de feedback
-
-echo "   Génération de ${TOTAL_LINES} lignes par chunks de ${CHUNK_SIZE}..."
 
 while [ $LINES_GENERATED -lt $TOTAL_LINES ]; do
-    # Générer un chunk
-    for i in $(seq 1 $CHUNK_SIZE); do
-        # Année aléatoire entre 2020 et 2025
+    for ((i=1; i<=CHUNK_SIZE; i++)); do
         YEAR=$((2020 + RANDOM % 6))
-        
-        # Mois et jour aléatoires
         MONTH=$(printf "%02d" $((1 + RANDOM % 12)))
         DAY=$(printf "%02d" $((1 + RANDOM % 28)))
-        
-        # Heure aléatoire
         HOUR=$(printf "%02d" $((RANDOM % 24)))
         
-        # Ville aléatoire (50 villes)
-        CITY=${CITIES[$((RANDOM % 50))]}
+        # Sélection ville aléatoire
+        RAND_CITY_IDX=$((RANDOM % ${#CITIES[@]}))
+        CITY=${CITIES[$RAND_CITY_IDX]}
         
-        # Température : Base selon année + variation saisonnière + aléatoire
-        # 2023 sera l'année la plus chaude
-        case $YEAR in
-            2020) BASE_TEMP=15 ;;
-            2021) BASE_TEMP=16 ;;
-            2022) BASE_TEMP=17 ;;
-            2023) BASE_TEMP=19 ;;  # Année la plus chaude
-            2024) BASE_TEMP=18 ;;
-            2025) BASE_TEMP=17 ;;
-        esac
+        # Température simplifiée
+        BASE_TEMP=15
+        VARIATION=$((RANDOM % 20 - 5))
+        TEMP=$((BASE_TEMP + VARIATION))
         
-        # Variation saisonnière
-        MONTH_INT=$((10#$MONTH))
-        if [ $MONTH_INT -ge 6 ] && [ $MONTH_INT -le 8 ]; then
-            SEASONAL=10  # Été
-        elif [ $MONTH_INT -ge 12 ] || [ $MONTH_INT -le 2 ]; then
-            SEASONAL=-5  # Hiver
-        else
-            SEASONAL=0   # Printemps/Automne
-        fi
-        
-        # Aléatoire ±5
-        RANDOM_VARIATION=$((RANDOM % 11 - 5))
-        
-        TEMP=$((BASE_TEMP + SEASONAL + RANDOM_VARIATION))
-        
-        # Ajouter au fichier
         echo "${YEAR}-${MONTH}-${DAY}T${HOUR}:00:00,${CITY},${TEMP}" >> "$TEMP_FILE"
     done
     
     LINES_GENERATED=$((LINES_GENERATED + CHUNK_SIZE))
-    PROGRESS=$((LINES_GENERATED * 100 / TOTAL_LINES))
-    CURRENT_SIZE=$(du -m "$TEMP_FILE" | cut -f1)
-    echo "   Progress: ${PROGRESS}% - Taille actuelle: ${CURRENT_SIZE}MB"
     
-    # Arrêter si on atteint 5MB  # ✅ CHANGÉ
+    # Vérification taille
+    CURRENT_SIZE=$(du -m "$TEMP_FILE" | cut -f1)
     if [ $CURRENT_SIZE -ge $TARGET_SIZE_MB ]; then
-        echo "   ✅ Taille cible atteinte: ${CURRENT_SIZE}MB"
         break
     fi
 done
 
-FINAL_SIZE=$(du -h "$TEMP_FILE" | cut -f1)
-FINAL_LINES=$(wc -l < "$TEMP_FILE")
-
-echo ""
-echo "📊 Statistiques du fichier généré:"
-echo "   Taille: $FINAL_SIZE"
-echo "   Lignes: $(printf "%'d" $FINAL_LINES)"
-echo ""
-
 echo "📤 Upload vers HDFS..."
 /opt/hadoop/current/bin/hdfs dfs -put "$TEMP_FILE" "$OUTPUT_HDFS"
-
-echo "🧹 Nettoyage fichier temporaire..."
 rm -f "$TEMP_FILE"
 
-echo ""
-echo "✅ Génération terminée!"
-FILE_SIZE=$(/opt/hadoop/current/bin/hdfs dfs -du -h "$OUTPUT_HDFS" | awk '{print $1, $2}')
-echo "   Fichier: $OUTPUT_HDFS"
-echo "   Taille: $FILE_SIZE"
-echo ""
-echo "Vérification:"
-echo "   hdfs dfs -ls -h /user/spark/temperature/"
-echo "   hdfs dfs -head /user/spark/temperature/data.csv"
+echo "✅ Terminé !"
+/opt/hadoop/current/bin/hdfs dfs -du -h "$OUTPUT_HDFS"
